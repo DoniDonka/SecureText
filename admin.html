@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SecureText Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+</head>
+<body>
+
+    <!-- ADMIN LOGIN SCREEN -->
+    <div id="admin-login">
+        <h1>Admin Login</h1>
+        <input type="email" id="adminEmail" placeholder="Email">
+        <input type="password" id="adminPassword" placeholder="Password">
+        <button id="loginBtn">Login</button>
+        <p id="loginError" style="color:red;"></p>
+    </div>
+
+    <!-- ADMIN DASHBOARD -->
+    <div id="admin-dashboard" style="display:none;">
+        <h1>Pending Users</h1>
+        <div id="pendingList"></div>
+        <button id="logoutBtn">Logout</button>
+    </div>
+
+    <script src="firebase.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>
