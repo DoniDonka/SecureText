@@ -129,22 +129,28 @@ function loadChat(name) {
         msgInput.value = "";
     };
 
-    // LIVE MAIN MESSAGES
+    // LIVE MAIN MESSAGES (FIXED)
     db.collection("messages")
-        .where("replyTo", "==", null)
-        .orderBy("timestamp")
+        .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
+
             messagesDiv.innerHTML = "";
+
             snapshot.forEach((doc) => {
                 const msg = doc.data();
+
+                // Only show main messages
+                if (msg.replyTo !== null) return;
+
                 const isOwn = msg.userId === userId;
+
                 const time =
                     msg.timestamp && msg.timestamp.toDate
                         ? msg.timestamp.toDate().toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
                           })
-                        : "";
+                        : "Sending...";
 
                 messagesDiv.innerHTML += `
                     <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
@@ -154,12 +160,8 @@ function loadChat(name) {
                         </div>
                         <div class="msg-text">${escapeHtml(msg.text)}</div>
                         <div class="msg-actions">
-                            <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(
-                    msg.text || ""
-                )}">Reply</button>
-                            <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(
-                    msg.text || ""
-                )}">View replies</button>
+                            <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">Reply</button>
+                            <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">View replies</button>
                             ${
                                 isOwn
                                     ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>`
@@ -171,6 +173,8 @@ function loadChat(name) {
             });
 
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }, (error) => {
+            console.error("Firestore listener error:", error);
         });
 
     // THEME TOGGLE
@@ -191,7 +195,7 @@ function loadChat(name) {
 }
 
 // ----------------------
-// REPLIES (C2 DRAWER)
+// REPLIES
 // ----------------------
 function openReplies(parentId, parentText) {
     const panel = document.getElementById("replies-panel");
@@ -205,27 +209,28 @@ function openReplies(parentId, parentText) {
     if (!panel) return;
 
     panel.classList.remove("hidden");
-    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(
-        0,
-        40
-    )}"`;
+    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
     sendReplyBtn.dataset.parentId = parentId;
 
     db.collection("messages")
-        .where("replyTo", "==", parentId)
-        .orderBy("timestamp")
+        .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
+
             list.innerHTML = "";
+
             snapshot.forEach((doc) => {
                 const msg = doc.data();
+                if (msg.replyTo !== parentId) return;
+
                 const isOwn = msg.userId === userId;
+
                 const time =
                     msg.timestamp && msg.timestamp.toDate
                         ? msg.timestamp.toDate().toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
                           })
-                        : "";
+                        : "Sending...";
 
                 list.innerHTML += `
                     <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
@@ -269,9 +274,7 @@ function closeReplies() {
     if (panel) panel.classList.add("hidden");
 }
 
-// ----------------------
-// DELETE (USER ONLY)
-// ----------------------
+// DELETE
 function deleteMessage(messageId, parentId) {
     db.collection("messages").doc(messageId).delete();
 
@@ -287,9 +290,7 @@ function deleteMessage(messageId, parentId) {
     }
 }
 
-// ----------------------
-// GLOBAL CLICK HANDLER
-// ----------------------
+// GLOBAL CLICK
 document.addEventListener("click", (e) => {
     const target = e.target;
 
@@ -315,9 +316,7 @@ document.addEventListener("click", (e) => {
     }
 });
 
-// ----------------------
 // ESCAPE HELPER
-// ----------------------
 function escapeHtml(str) {
     if (!str) return "";
     return str
@@ -326,5 +325,4 @@ function escapeHtml(str) {
         .replace(/>/g, "&gt;");
 }
 
-}); // END DOMContentLoaded
-
+});
