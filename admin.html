@@ -23,13 +23,75 @@
 
     <!-- ADMIN DASHBOARD -->
     <div id="admin-dashboard" style="display:none;">
-        <h1>Pending Users</h1>
+        <h1>Admin Panel</h1>
+
+        <h2>Pending Users</h2>
         <div id="pendingUsers"></div>
 
+        <hr>
+
+        <h2>Live Chat View</h2>
+        <div id="chat-box" style="height:300px; overflow-y:auto; border:1px solid #ccc; padding:10px;"></div>
+
+        <button id="deleteAllBtn" style="margin-top:10px; background:red; color:white; padding:6px 12px; border:none; cursor:pointer;">
+            Delete All Chats
+        </button>
+
+        <br><br>
         <button id="logoutBtn">Logout</button>
     </div>
 
     <script src="firebase.js"></script>
+
+<script>
+// Keep admin logged in after refresh
+firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+        document.getElementById("admin-login").style.display = "none";
+        document.getElementById("admin-dashboard").style.display = "block";
+        startChatListener();
+    } else {
+        document.getElementById("admin-login").style.display = "block";
+        document.getElementById("admin-dashboard").style.display = "none";
+    }
+});
+
+const chatBox = document.getElementById("chat-box");
+const deleteAllBtn = document.getElementById("deleteAllBtn");
+
+function startChatListener() {
+    db.collection("messages").orderBy("timestamp")
+    .onSnapshot(snapshot => {
+        chatBox.innerHTML = "";
+
+        snapshot.forEach(doc => {
+            const msg = doc.data();
+            const messageDiv = document.createElement("div");
+            messageDiv.innerHTML = "<b>" + msg.name + ":</b> " + msg.text;
+            chatBox.appendChild(messageDiv);
+        });
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+}
+
+// Delete all messages
+deleteAllBtn.onclick = async () => {
+    if (!confirm("Delete ALL messages?")) return;
+
+    const snapshot = await db.collection("messages").get();
+    const batch = db.batch();
+
+    snapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+    alert("All messages deleted.");
+};
+</script>
+
     <script src="admin.js"></script>
+
 </body>
 </html>
