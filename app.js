@@ -1,3 +1,5 @@
+document.addEventListener("DOMContentLoaded", () => {
+
 // ----------------------
 // SESSION / ENTRY LOGIC
 // ----------------------
@@ -323,3 +325,6 @@ function escapeHtml(str) {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
 }
+
+}); // END DOMContentLoaded
+
