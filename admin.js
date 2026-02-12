@@ -1,6 +1,6 @@
 // --- ADMIN LOGIN ---
 document.getElementById("loginBtn").onclick = function () {
-    const email = document.getElementById("adminEmail").value;
+    const email = document.getElementById("adminEmail").value.trim();
     const password = document.getElementById("adminPassword").value;
 
     auth.signInWithEmailAndPassword(email, password)
@@ -8,7 +8,6 @@ document.getElementById("loginBtn").onclick = function () {
             document.getElementById("admin-login").style.display = "none";
             document.getElementById("admin-dashboard").style.display = "block";
             loadPendingUsers();
-            loadMessages();
         })
         .catch(() => {
             document.getElementById("loginError").innerText = "Invalid login";
@@ -17,7 +16,8 @@ document.getElementById("loginBtn").onclick = function () {
 
 // --- LOAD PENDING USERS ---
 function loadPendingUsers() {
-    db.collection("pendingUsers").where("approved", "==", false)
+    db.collection("pendingUsers")
+        .where("approved", "==", false)
         .onSnapshot((snapshot) => {
             const container = document.getElementById("pendingUsers");
             container.innerHTML = "";
@@ -48,27 +48,9 @@ function denyUser(id) {
     db.collection("pendingUsers").doc(id).delete();
 }
 
-// --- LOAD MESSAGES ---
-function loadMessages() {
-    db.collection("messages").orderBy("timestamp")
-        .onSnapshot((snapshot) => {
-            const container = document.getElementById("adminMessages");
-            container.innerHTML = "";
-
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                const div = document.createElement("div");
-                div.className = "message";
-                div.innerHTML = `
-                    <p><strong>${data.name}:</strong> ${data.text}</p>
-                    <button onclick="deleteMessage('${doc.id}')">Delete</button>
-                `;
-                container.appendChild(div);
-            });
-        });
-}
-
-// --- DELETE MESSAGE ---
-function deleteMessage(id) {
-    db.collection("messages").doc(id).delete();
-}
+// --- LOGOUT ---
+document.getElementById("logoutBtn").onclick = function () {
+    auth.signOut().then(() => {
+        location.reload();
+    });
+};
