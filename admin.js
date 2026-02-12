@@ -1,58 +1,74 @@
-// LOGIN
-document.getElementById("loginBtn").onclick = async () => {
+// --- ADMIN LOGIN ---
+document.getElementById("loginBtn").onclick = function () {
     const email = document.getElementById("adminEmail").value;
     const password = document.getElementById("adminPassword").value;
 
-    try {
-        await auth.signInWithEmailAndPassword(email, password);
-
-        document.getElementById("admin-login").style.display = "none";
-        document.getElementById("admin-dashboard").style.display = "block";
-
-        loadPendingUsers();
-    } catch (error) {
-        document.getElementById("loginError").textContent = "Invalid login.";
-    }
+    auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+            document.getElementById("admin-login").style.display = "none";
+            document.getElementById("admin-dashboard").style.display = "block";
+            loadPendingUsers();
+            loadMessages();
+        })
+        .catch(() => {
+            document.getElementById("loginError").innerText = "Invalid login";
+        });
 };
 
-// LOGOUT
-document.getElementById("logoutBtn").onclick = async () => {
-    await auth.signOut();
-    location.reload();
-};
-
-// LOAD PENDING USERS
+// --- LOAD PENDING USERS ---
 function loadPendingUsers() {
-    db.collection("pendingUsers")
-        .where("approved", "==", false)
-        .onSnapshot(snapshot => {
-            const list = document.getElementById("pendingList");
-            list.innerHTML = "";
+    db.collection("pendingUsers").where("approved", "==", false)
+        .onSnapshot((snapshot) => {
+            const container = document.getElementById("pendingUsers");
+            container.innerHTML = "";
 
-            snapshot.forEach(doc => {
+            snapshot.forEach((doc) => {
                 const data = doc.data();
-
                 const div = document.createElement("div");
-                div.className = "pendingUser";
+                div.className = "pending-user";
                 div.innerHTML = `
-                    <strong>${data.name}</strong>
+                    <p>${data.name}</p>
                     <button onclick="approveUser('${doc.id}')">Approve</button>
                     <button onclick="denyUser('${doc.id}')">Deny</button>
                 `;
-
-                list.appendChild(div);
+                container.appendChild(div);
             });
         });
 }
 
-// APPROVE USER
-async function approveUser(uid) {
-    await db.collection("pendingUsers").doc(uid).update({
+// --- APPROVE USER ---
+function approveUser(id) {
+    db.collection("pendingUsers").doc(id).update({
         approved: true
     });
 }
 
-// DENY USER
-async function denyUser(uid) {
-    await db.collection("pendingUsers").doc(uid).delete();
+// --- DENY USER ---
+function denyUser(id) {
+    db.collection("pendingUsers").doc(id).delete();
+}
+
+// --- LOAD MESSAGES ---
+function loadMessages() {
+    db.collection("messages").orderBy("timestamp")
+        .onSnapshot((snapshot) => {
+            const container = document.getElementById("adminMessages");
+            container.innerHTML = "";
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const div = document.createElement("div");
+                div.className = "message";
+                div.innerHTML = `
+                    <p><strong>${data.name}:</strong> ${data.text}</p>
+                    <button onclick="deleteMessage('${doc.id}')">Delete</button>
+                `;
+                container.appendChild(div);
+            });
+        });
+}
+
+// --- DELETE MESSAGE ---
+function deleteMessage(id) {
+    db.collection("messages").doc(id).delete();
 }
