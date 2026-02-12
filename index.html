@@ -11,10 +11,40 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        /* ADMIN PATH BUTTON */
+        .admin-path-btn {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            padding: 6px 14px;
+            background-color: #111;
+            color: white;
+            border: 1px solid #333;
+            font-size: 13px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .admin-path-btn:hover {
+            background-color: #222;
+        }
+
+        #name-screen {
+            position: relative;
+        }
+    </style>
 </head>
 
 <body>
     <div id="name-screen">
+        <!-- ADMIN PATH BUTTON -->
+        <button class="admin-path-btn"
+            onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
+            ADMIN PATH
+        </button>
+
         <h1>SecureText</h1>
         <p>Enter your name to continue.</p>
 
@@ -28,4 +58,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-
