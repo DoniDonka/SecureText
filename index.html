@@ -4,51 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureText</title>
-
-    <!-- Styles -->
     <link rel="stylesheet" href="style.css">
 
-    <!-- Firebase (v8 for compatibility with your admin panel) -->
+    <!-- Firebase (v8) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 </head>
 
 <body>
+    <div id="name-screen">
+        <h1>SecureText</h1>
+        <p>
+            Enter your name.<br>
+            (You will need to wait for an admin (Doni) to accept your name.)
+        </p>
 
-    <div class="wrapper">
-        <header class="header">
-            <h1 class="logo">SecureText</h1>
-        </header>
+        <input id="nameInput" type="text" placeholder="Your name">
+        <button id="continueBtn">Continue</button>
 
-        <main class="main">
-            <div class="card">
-                <h2 class="card-title">Enter your name</h2>
-                <p class="card-desc">
-                    You will need to wait for an admin (Doni) to accept your name.
-                </p>
-
-                <input 
-                    type="text" 
-                    id="nameInput" 
-                    class="input"
-                    placeholder="Your name">
-
-                <button id="continueBtn" class="btn-primary">
-                    Continue
-                </button>
-
-                <p id="errorMsg" class="error-text"></p>
-            </div>
-        </main>
-
-        <footer class="footer">
-            <p class="footer-text">SecureText © 2026</p>
-        </footer>
+        <p id="errorMsg" class="error"></p>
     </div>
 
-    <!-- Firebase config + app logic -->
     <script src="firebase.js"></script>
     <script src="app.js"></script>
-
 </body>
 </html>
