@@ -129,19 +129,27 @@ function loadChat(name) {
         msgInput.value = "";
     };
 
-    // LIVE MAIN MESSAGES
+    // LIVE MAIN MESSAGES (FIXED)
     db.collection("messages")
         .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
+
             messagesDiv.innerHTML = "";
+
             snapshot.forEach((doc) => {
                 const msg = doc.data();
+
+                // Only show main messages
                 if (msg.replyTo !== null) return;
 
                 const isOwn = msg.userId === userId;
+
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                          })
                         : "Sending...";
 
                 messagesDiv.innerHTML += `
@@ -154,18 +162,26 @@ function loadChat(name) {
                         <div class="msg-actions">
                             <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">Reply</button>
                             <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">View replies</button>
-                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
+                            ${
+                                isOwn
+                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>`
+                                    : ""
+                            }
                         </div>
                     </div>
                 `;
             });
+
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }, (error) => console.error("Firestore listener error:", error));
+        }, (error) => {
+            console.error("Firestore listener error:", error);
+        });
 
     // THEME TOGGLE
     themeToggle.onclick = () => {
         const screen = document.getElementById("chat-screen");
         const isDay = screen.classList.contains("day");
+
         if (isDay) {
             screen.classList.remove("day");
             screen.classList.add("night");
@@ -176,49 +192,6 @@ function loadChat(name) {
             themeToggle.textContent = "☀️";
         }
     };
-
-    // ----------------------
-    // APPROVED USERS SIDEBAR
-    // ----------------------
-    if (!document.getElementById("approved-sidebar")) {
-        const sidebar = document.createElement("div");
-        sidebar.id = "approved-sidebar";
-        sidebar.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 0;
-            width: 180px;
-            height: calc(100% - 100px);
-            background-color: #111;
-            color: #fff;
-            padding: 10px;
-            overflow-y: auto;
-            border-left: 2px solid #333;
-            z-index: 999;
-            font-family: sans-serif;
-        `;
-        sidebar.innerHTML = `<h4>Approved Users</h4><div id="approved-users-list"></div>`;
-        document.body.appendChild(sidebar);
-
-        const chatScreen = document.getElementById("chat-screen");
-        if (chatScreen) chatScreen.style.marginRight = "190px";
-    }
-
-    const approvedUsersList = document.getElementById("approved-users-list");
-    db.collection("pendingUsers")
-      .where("approved", "==", true)
-      .orderBy("createdAt", "asc")
-      .onSnapshot((snapshot) => {
-          if (!approvedUsersList) return;
-          approvedUsersList.innerHTML = "";
-          snapshot.forEach((doc) => {
-              const user = doc.data();
-              const div = document.createElement("div");
-              div.textContent = user.name;
-              div.style.padding = "4px 0";
-              approvedUsersList.appendChild(div);
-          });
-      });
 }
 
 // ----------------------
@@ -236,37 +209,49 @@ function openReplies(parentId, parentText) {
     if (!panel) return;
 
     panel.classList.remove("hidden");
-    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0,40)}"`;
+    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
     sendReplyBtn.dataset.parentId = parentId;
 
     db.collection("messages")
-      .orderBy("timestamp", "asc")
-      .onSnapshot((snapshot) => {
-          list.innerHTML = "";
-          snapshot.forEach((doc) => {
-              const msg = doc.data();
-              if (msg.replyTo !== parentId) return;
+        .orderBy("timestamp", "asc")
+        .onSnapshot((snapshot) => {
 
-              const isOwn = msg.userId === userId;
-              const time = msg.timestamp && msg.timestamp.toDate
-                  ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
-                  : "Sending...";
+            list.innerHTML = "";
 
-              list.innerHTML += `
-                  <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-                      <div class="msg-top">
-                          <strong>${msg.name}</strong>
-                          <span class="msg-time">${time}</span>
-                      </div>
-                      <div class="msg-text">${escapeHtml(msg.text)}</div>
-                      <div class="msg-actions">
-                          ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
-                      </div>
-                  </div>
-              `;
-          });
-          list.scrollTop = list.scrollHeight;
-      });
+            snapshot.forEach((doc) => {
+                const msg = doc.data();
+                if (msg.replyTo !== parentId) return;
+
+                const isOwn = msg.userId === userId;
+
+                const time =
+                    msg.timestamp && msg.timestamp.toDate
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                          })
+                        : "Sending...";
+
+                list.innerHTML += `
+                    <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
+                        <div class="msg-top">
+                            <strong>${msg.name}</strong>
+                            <span class="msg-time">${time}</span>
+                        </div>
+                        <div class="msg-text">${escapeHtml(msg.text)}</div>
+                        <div class="msg-actions">
+                            ${
+                                isOwn
+                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>`
+                                    : ""
+                            }
+                        </div>
+                    </div>
+                `;
+            });
+
+            list.scrollTop = list.scrollHeight;
+        });
 
     sendReplyBtn.onclick = () => {
         const text = replyInput.value.trim();
@@ -295,13 +280,13 @@ function deleteMessage(messageId, parentId) {
 
     if (parentId === "null") {
         db.collection("messages")
-          .where("replyTo", "==", messageId)
-          .get()
-          .then((snapshot) => {
-              const batch = db.batch();
-              snapshot.forEach((doc) => batch.delete(doc.ref));
-              return batch.commit();
-          });
+            .where("replyTo", "==", messageId)
+            .get()
+            .then((snapshot) => {
+                const batch = db.batch();
+                snapshot.forEach((doc) => batch.delete(doc.ref));
+                return batch.commit();
+            });
     }
 }
 
@@ -340,4 +325,4 @@ function escapeHtml(str) {
         .replace(/>/g, "&gt;");
 }
 
-}); // END DOMContentLoaded
+});
