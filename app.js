@@ -88,6 +88,8 @@ function loadChat(name) {
 
             <div id="messages" class="messages"></div>
 
+            <div id="typingIndicator" style="font-style: italic; margin: 5px 0;"></div>
+
             <div id="replies-panel" class="replies hidden">
                 <div class="replies-header">
                     <span id="replies-title">Replies</span>
@@ -111,35 +113,10 @@ function loadChat(name) {
     const msgInput = document.getElementById("msgInput");
     const sendBtn = document.getElementById("sendBtn");
     const messagesDiv = document.getElementById("messages");
+    const typingDiv = document.getElementById("typingIndicator");
     const themeToggle = document.getElementById("themeToggle");
 
-    // Typing indicator elements
-    const typingIndicator = document.createElement("div");
-    typingIndicator.id = "typing-indicator";
-    typingIndicator.style.display = "none";
-    typingIndicator.style.fontStyle = "italic";
-    typingIndicator.style.padding = "5px";
-    typingIndicator.textContent = "Someone is typing...";
-    messagesDiv.parentNode.insertBefore(typingIndicator, messagesDiv.nextSibling);
-
     let typingTimeout;
-    msgInput.addEventListener("input", () => {
-        db.collection("typing").doc("status").set({
-            [userId]: msgInput.value.length > 0
-        });
-    });
-
-    db.collection("typing").doc("status").onSnapshot((doc) => {
-        const data = doc.data() || {};
-        const someoneTyping = Object.keys(data).some(id => id !== userId && data[id]);
-        typingIndicator.style.display = someoneTyping ? "block" : "none";
-        if (someoneTyping) {
-            typingIndicator.textContent = "Someone is typing...";
-            // play sound
-            const audio = new Audio("https://freesound.org/data/previews/337/337049_3231531-lq.mp3");
-            audio.play().catch(() => {});
-        }
-    });
 
     // SEND MAIN MESSAGE
     sendBtn.onclick = () => {
@@ -155,12 +132,41 @@ function loadChat(name) {
         });
 
         msgInput.value = "";
+
+        // set typing false on send
         db.collection("typing").doc("status").set({
             [userId]: false
-        });
+        }, { merge: true });
     };
 
-    // LIVE MAIN MESSAGES (FIXED)
+    // TYPING INDICATOR LOGIC
+    msgInput.addEventListener("input", () => {
+        db.collection("typing").doc("status").set({
+            [userId]: true
+        }, { merge: true });
+
+        if (typingTimeout) clearTimeout(typingTimeout);
+
+        typingTimeout = setTimeout(() => {
+            db.collection("typing").doc("status").set({
+                [userId]: false
+            }, { merge: true });
+        }, 2000);
+    });
+
+    // LIVE TYPING STATUS
+    db.collection("typing").doc("status").onSnapshot((doc) => {
+        if (!doc.exists) return;
+
+        const data = doc.data();
+        const typingUsers = Object.entries(data)
+            .filter(([id, val]) => id !== userId && val === true)
+            .map(([id]) => id);
+
+        typingDiv.textContent = typingUsers.length > 0 ? `Someone is typing...` : "";
+    });
+
+    // LIVE MAIN MESSAGES
     db.collection("messages")
         .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
@@ -169,8 +175,6 @@ function loadChat(name) {
 
             snapshot.forEach((doc) => {
                 const msg = doc.data();
-
-                // Only show main messages
                 if (msg.replyTo !== null) return;
 
                 const isOwn = msg.userId === userId;
@@ -297,6 +301,11 @@ function openReplies(parentId, parentText) {
         });
 
         replyInput.value = "";
+
+        // set typing false on reply
+        db.collection("typing").doc("status").set({
+            [userId]: false
+        }, { merge: true });
     };
 }
 
@@ -319,6 +328,12 @@ function deleteMessage(messageId, parentId) {
                 return batch.commit();
             });
     }
+
+    // also set typing false when deleted
+    const userId = localStorage.getItem("userId");
+    db.collection("typing").doc("status").set({
+        [userId]: false
+    }, { merge: true });
 }
 
 // GLOBAL CLICK
