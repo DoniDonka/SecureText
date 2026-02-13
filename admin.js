@@ -1,3 +1,4 @@
+// ELEMENTS
 const adminLogin = document.getElementById("admin-login");
 const adminDashboard = document.getElementById("admin-dashboard");
 const pendingUsersDiv = document.getElementById("pendingUsers");
@@ -7,11 +8,18 @@ const logoutBtn = document.getElementById("logoutBtn");
 const loginError = document.getElementById("loginError");
 
 
-// LOGIN
+// LOGIN BUTTON
 loginBtn.onclick = async () => {
 
-    const email = document.getElementById("adminEmail").value;
-    const password = document.getElementById("adminPassword").value;
+    const email = document.getElementById("adminEmail").value.trim();
+    const password = document.getElementById("adminPassword").value.trim();
+
+    loginError.textContent = "";
+
+    if (!email || !password) {
+        loginError.textContent = "Enter email and password.";
+        return;
+    }
 
     try {
 
@@ -19,14 +27,14 @@ loginBtn.onclick = async () => {
 
     } catch (error) {
 
-        loginError.innerText = error.message;
+        loginError.textContent = error.message;
 
     }
 
 };
 
 
-// LOGOUT
+// LOGOUT BUTTON
 logoutBtn.onclick = () => {
 
     auth.signOut();
@@ -34,18 +42,17 @@ logoutBtn.onclick = () => {
 };
 
 
-// KEEP LOGIN AFTER REFRESH
-auth.onAuthStateChanged(user => {
+// KEEP ADMIN LOGGED IN AFTER REFRESH
+auth.onAuthStateChanged((user) => {
 
     if (user) {
 
         adminLogin.style.display = "none";
         adminDashboard.style.display = "block";
 
-        listenForPendingUsers();
+        startPendingUsersListener();
 
-    }
-    else {
+    } else {
 
         adminLogin.style.display = "block";
         adminDashboard.style.display = "none";
@@ -55,24 +62,29 @@ auth.onAuthStateChanged(user => {
 });
 
 
-// REALTIME PENDING USERS LISTENER
-function listenForPendingUsers() {
+// REALTIME LISTENER FOR PENDING USERS
+function startPendingUsersListener() {
 
     db.collection("pendingUsers")
-    .orderBy("timestamp", "asc")
-    .onSnapshot(snapshot => {
+    .orderBy("createdAt", "asc")
+    .onSnapshot((snapshot) => {
 
         pendingUsersDiv.innerHTML = "";
 
-        snapshot.forEach(doc => {
+        snapshot.forEach((doc) => {
 
             const data = doc.data();
 
+            // ONLY SHOW NON APPROVED USERS
+            if (data.approved === true) return;
+
             const div = document.createElement("div");
 
+            div.style.marginBottom = "10px";
+
             div.innerHTML = `
-                ${data.name}
-                <button onclick="approveUser('${doc.id}', '${data.name}')">
+                <strong>${escapeHtml(data.name)}</strong>
+                <button onclick="approveUser('${doc.id}')" style="margin-left:10px;">
                     Approve
                 </button>
             `;
@@ -81,21 +93,45 @@ function listenForPendingUsers() {
 
         });
 
+    }, (error) => {
+
+        console.error("Pending users listener error:", error);
+
     });
 
 }
 
 
-// APPROVE USER
-async function approveUser(docId, name) {
+// APPROVE USER (THIS FIXES YOUR WHOLE SYSTEM)
+window.approveUser = async function(docId) {
 
-    await db.collection("approvedUsers").add({
+    try {
 
-        name: name,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        await db.collection("pendingUsers")
+        .doc(docId)
+        .update({
 
-    });
+            approved: true
 
-    await db.collection("pendingUsers").doc(docId).delete();
+        });
+
+    } catch (error) {
+
+        console.error("Approve error:", error);
+
+    }
+
+};
+
+
+// ESCAPE HTML FOR SAFETY
+function escapeHtml(str) {
+
+    if (!str) return "";
+
+    return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
 }
