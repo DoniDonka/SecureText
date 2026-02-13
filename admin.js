@@ -1,56 +1,101 @@
-// --- ADMIN LOGIN ---
-document.getElementById("loginBtn").onclick = function () {
-    const email = document.getElementById("adminEmail").value.trim();
+const adminLogin = document.getElementById("admin-login");
+const adminDashboard = document.getElementById("admin-dashboard");
+const pendingUsersDiv = document.getElementById("pendingUsers");
+
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const loginError = document.getElementById("loginError");
+
+
+// LOGIN
+loginBtn.onclick = async () => {
+
+    const email = document.getElementById("adminEmail").value;
     const password = document.getElementById("adminPassword").value;
 
-    auth.signInWithEmailAndPassword(email, password)
-        .then(() => {
-            document.getElementById("admin-login").style.display = "none";
-            document.getElementById("admin-dashboard").style.display = "block";
-            loadPendingUsers();
-        })
-        .catch(() => {
-            document.getElementById("loginError").innerText = "Invalid login";
-        });
+    try {
+
+        await auth.signInWithEmailAndPassword(email, password);
+
+    } catch (error) {
+
+        loginError.innerText = error.message;
+
+    }
+
 };
 
-// --- LOAD PENDING USERS ---
-function loadPendingUsers() {
+
+// LOGOUT
+logoutBtn.onclick = () => {
+
+    auth.signOut();
+
+};
+
+
+// KEEP LOGIN AFTER REFRESH
+auth.onAuthStateChanged(user => {
+
+    if (user) {
+
+        adminLogin.style.display = "none";
+        adminDashboard.style.display = "block";
+
+        listenForPendingUsers();
+
+    }
+    else {
+
+        adminLogin.style.display = "block";
+        adminDashboard.style.display = "none";
+
+    }
+
+});
+
+
+// REALTIME PENDING USERS LISTENER
+function listenForPendingUsers() {
+
     db.collection("pendingUsers")
-        .where("approved", "==", false)
-        .onSnapshot((snapshot) => {
-            const container = document.getElementById("pendingUsers");
-            container.innerHTML = "";
+    .orderBy("timestamp", "asc")
+    .onSnapshot(snapshot => {
 
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                const div = document.createElement("div");
-                div.className = "pending-user";
-                div.innerHTML = `
-                    <p>${data.name}</p>
-                    <button onclick="approveUser('${doc.id}')">Approve</button>
-                    <button onclick="denyUser('${doc.id}')">Deny</button>
-                `;
-                container.appendChild(div);
-            });
+        pendingUsersDiv.innerHTML = "";
+
+        snapshot.forEach(doc => {
+
+            const data = doc.data();
+
+            const div = document.createElement("div");
+
+            div.innerHTML = `
+                ${data.name}
+                <button onclick="approveUser('${doc.id}', '${data.name}')">
+                    Approve
+                </button>
+            `;
+
+            pendingUsersDiv.appendChild(div);
+
         });
-}
 
-// --- APPROVE USER ---
-function approveUser(id) {
-    db.collection("pendingUsers").doc(id).update({
-        approved: true
     });
+
 }
 
-// --- DENY USER ---
-function denyUser(id) {
-    db.collection("pendingUsers").doc(id).delete();
-}
 
-// --- LOGOUT ---
-document.getElementById("logoutBtn").onclick = function () {
-    auth.signOut().then(() => {
-        location.reload();
+// APPROVE USER
+async function approveUser(docId, name) {
+
+    await db.collection("approvedUsers").add({
+
+        name: name,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+
     });
-};
+
+    await db.collection("pendingUsers").doc(docId).delete();
+
+}
