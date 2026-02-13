@@ -70,58 +70,39 @@ function showWaitingScreen(name) {
 }
 
 // ----------------------
-// CHAT UI + LOGIC + SIDEBAR
+// CHAT UI + LOGIC
 // ----------------------
 function loadChat(name) {
     document.body.innerHTML = `
-        <div id="chat-screen" class="night" style="display:flex; height:100vh;">
-            
-            <!-- SIDEBAR -->
-            <div id="user-sidebar" style="
-                width:200px; 
-                background:#111; 
-                color:white; 
-                padding:10px; 
-                overflow-y:auto;
-                flex-shrink:0;
-            ">
-                <h3>Users Online</h3>
-                <div id="approvedUsersList"></div>
+        <div id="chat-screen" class="night">
+            <header class="chat-header">
+                <div>
+                    <h1>Welcome, ${name}!</h1>
+                    <p class="subtitle">SecureText chat</p>
+                </div>
+                <div class="chat-controls">
+                    <button id="themeToggle">🌙</button>
+                    <button id="logoutBtn">Logout</button>
+                </div>
+            </header>
+
+            <div id="messages" class="messages"></div>
+
+            <div id="replies-panel" class="replies hidden">
+                <div class="replies-header">
+                    <span id="replies-title">Replies</span>
+                    <button id="closeReplies">Close</button>
+                </div>
+                <div id="replies-list" class="replies-list"></div>
+                <div class="reply-input">
+                    <input id="replyMsgInput" type="text" placeholder="Reply...">
+                    <button id="sendReplyBtn">Send</button>
+                </div>
             </div>
 
-            <!-- MAIN CHAT AREA -->
-            <div style="flex:1; display:flex; flex-direction:column;">
-
-                <header class="chat-header" style="display:flex; justify-content:space-between; padding:10px; background:#222;">
-                    <div>
-                        <h1>Welcome, ${name}!</h1>
-                        <p class="subtitle">SecureText chat</p>
-                    </div>
-                    <div class="chat-controls">
-                        <button id="themeToggle">🌙</button>
-                        <button id="logoutBtn">Logout</button>
-                    </div>
-                </header>
-
-                <div id="messages" class="messages" style="flex:1; overflow-y:auto; padding:10px;"></div>
-
-                <div id="replies-panel" class="replies hidden">
-                    <div class="replies-header">
-                        <span id="replies-title">Replies</span>
-                        <button id="closeReplies">Close</button>
-                    </div>
-                    <div id="replies-list" class="replies-list"></div>
-                    <div class="reply-input">
-                        <input id="replyMsgInput" type="text" placeholder="Reply...">
-                        <button id="sendReplyBtn">Send</button>
-                    </div>
-                </div>
-
-                <div id="chat-input" style="padding:10px; display:flex;">
-                    <input id="msgInput" type="text" placeholder="Type a message" style="flex:1; padding:6px;">
-                    <button id="sendBtn" style="margin-left:5px;">Send</button>
-                </div>
-
+            <div id="chat-input">
+                <input id="msgInput" type="text" placeholder="Type a message">
+                <button id="sendBtn">Send</button>
             </div>
         </div>
     `;
@@ -131,7 +112,49 @@ function loadChat(name) {
     const sendBtn = document.getElementById("sendBtn");
     const messagesDiv = document.getElementById("messages");
     const themeToggle = document.getElementById("themeToggle");
+
+    // ----------------------
+    // APPROVED USERS SIDEBAR
+    // ----------------------
+    const sidebarDiv = document.createElement("div");
+    sidebarDiv.id = "user-sidebar";
+    sidebarDiv.style.cssText = `
+        width:200px;
+        background:#111;
+        color:white;
+        padding:10px;
+        overflow-y:auto;
+        flex-shrink:0;
+    `;
+    sidebarDiv.innerHTML = `<h3>Users Online</h3><div id="approvedUsersList"></div>`;
+
+    const chatScreen = document.getElementById("chat-screen");
+    if (chatScreen) {
+        chatScreen.style.display = "flex";
+        chatScreen.style.height = "100vh";
+
+        const mainContent = chatScreen.querySelector("div:first-child");
+        if (mainContent) {
+            chatScreen.insertBefore(sidebarDiv, mainContent);
+            mainContent.style.flex = "1";
+        }
+    }
+
     const approvedUsersList = document.getElementById("approvedUsersList");
+    db.collection("pendingUsers")
+      .where("approved", "==", true)
+      .orderBy("createdAt")
+      .onSnapshot((snapshot) => {
+          if (!approvedUsersList) return;
+          approvedUsersList.innerHTML = "";
+          snapshot.forEach((doc) => {
+              const user = doc.data();
+              const div = document.createElement("div");
+              div.textContent = user.name;
+              div.style.padding = "4px 0";
+              approvedUsersList.appendChild(div);
+          });
+      });
 
     // SEND MAIN MESSAGE
     sendBtn.onclick = () => {
@@ -149,19 +172,23 @@ function loadChat(name) {
         msgInput.value = "";
     };
 
-    // LIVE MAIN MESSAGES
+    // LIVE MAIN MESSAGES (FIXED)
     db.collection("messages")
-        .where("replyTo", "==", null)
-        .orderBy("timestamp")
+        .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
             messagesDiv.innerHTML = "";
             snapshot.forEach((doc) => {
                 const msg = doc.data();
+                if (msg.replyTo !== null) return;
+
                 const isOwn = msg.userId === userId;
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                        : "";
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                          })
+                        : "Sending...";
 
                 messagesDiv.innerHTML += `
                     <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
@@ -173,29 +200,18 @@ function loadChat(name) {
                         <div class="msg-actions">
                             <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">Reply</button>
                             <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">View replies</button>
-                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
+                            ${
+                                isOwn
+                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>`
+                                    : ""
+                            }
                         </div>
                     </div>
                 `;
             });
-
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
-
-    // LIVE APPROVED USERS SIDEBAR
-    db.collection("pendingUsers")
-        .where("approved", "==", true)
-        .orderBy("createdAt")
-        .onSnapshot((snapshot) => {
-            approvedUsersList.innerHTML = "";
-
-            snapshot.forEach((doc) => {
-                const user = doc.data();
-                const div = document.createElement("div");
-                div.textContent = user.name;
-                div.style.padding = "4px 0";
-                approvedUsersList.appendChild(div);
-            });
+        }, (error) => {
+            console.error("Firestore listener error:", error);
         });
 
     // THEME TOGGLE
@@ -216,7 +232,7 @@ function loadChat(name) {
 }
 
 // ----------------------
-// REPLIES (C2 DRAWER)
+// REPLIES
 // ----------------------
 function openReplies(parentId, parentText) {
     const panel = document.getElementById("replies-panel");
@@ -234,17 +250,21 @@ function openReplies(parentId, parentText) {
     sendReplyBtn.dataset.parentId = parentId;
 
     db.collection("messages")
-        .where("replyTo", "==", parentId)
-        .orderBy("timestamp")
+        .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
             list.innerHTML = "";
             snapshot.forEach((doc) => {
                 const msg = doc.data();
+                if (msg.replyTo !== parentId) return;
+
                 const isOwn = msg.userId === userId;
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                        : "";
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                          })
+                        : "Sending...";
 
                 list.innerHTML += `
                     <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
@@ -254,12 +274,15 @@ function openReplies(parentId, parentText) {
                         </div>
                         <div class="msg-text">${escapeHtml(msg.text)}</div>
                         <div class="msg-actions">
-                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
+                            ${
+                                isOwn
+                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>`
+                                    : ""
+                            }
                         </div>
                     </div>
                 `;
             });
-
             list.scrollTop = list.scrollHeight;
         });
 
@@ -284,9 +307,7 @@ function closeReplies() {
     if (panel) panel.classList.add("hidden");
 }
 
-// ----------------------
-// DELETE (USER ONLY)
-// ----------------------
+// DELETE
 function deleteMessage(messageId, parentId) {
     db.collection("messages").doc(messageId).delete();
 
@@ -302,9 +323,7 @@ function deleteMessage(messageId, parentId) {
     }
 }
 
-// ----------------------
-// GLOBAL CLICK HANDLER
-// ----------------------
+// GLOBAL CLICK
 document.addEventListener("click", (e) => {
     const target = e.target;
 
@@ -330,14 +349,13 @@ document.addEventListener("click", (e) => {
     }
 });
 
-// ----------------------
 // ESCAPE HELPER
-// ----------------------
 function escapeHtml(str) {
     if (!str) return "";
-    return str.replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;");
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 }
 
-}); // END DOMContentLoaded
+});
