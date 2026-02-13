@@ -137,11 +137,13 @@ function loadChat(name) {
             snapshot.forEach((doc) => {
                 const msg = doc.data();
                 if (msg.replyTo !== null) return;
+
                 const isOwn = msg.userId === userId;
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
                         : "Sending...";
+
                 messagesDiv.innerHTML += `
                     <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
                         <div class="msg-top">
@@ -158,7 +160,7 @@ function loadChat(name) {
                 `;
             });
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }, (error) => { console.error("Firestore listener error:", error); });
+        }, (error) => console.error("Firestore listener error:", error));
 
     // THEME TOGGLE
     themeToggle.onclick = () => {
@@ -176,12 +178,12 @@ function loadChat(name) {
     };
 
     // ----------------------
-    // APPROVED USERS SIDEBAR (NON-INTRUSIVE)
+    // APPROVED USERS SIDEBAR
     // ----------------------
     if (!document.getElementById("approved-sidebar")) {
-        const approvedSidebar = document.createElement("div");
-        approvedSidebar.id = "approved-sidebar";
-        approvedSidebar.style.cssText = `
+        const sidebar = document.createElement("div");
+        sidebar.id = "approved-sidebar";
+        sidebar.style.cssText = `
             position: fixed;
             top: 80px;
             right: 0;
@@ -195,8 +197,11 @@ function loadChat(name) {
             z-index: 999;
             font-family: sans-serif;
         `;
-        approvedSidebar.innerHTML = `<h4>Approved Users</h4><div id="approved-users-list"></div>`;
-        document.body.appendChild(approvedSidebar);
+        sidebar.innerHTML = `<h4>Approved Users</h4><div id="approved-users-list"></div>`;
+        document.body.appendChild(sidebar);
+
+        const chatScreen = document.getElementById("chat-screen");
+        if (chatScreen) chatScreen.style.marginRight = "190px";
     }
 
     const approvedUsersList = document.getElementById("approved-users-list");
@@ -231,36 +236,37 @@ function openReplies(parentId, parentText) {
     if (!panel) return;
 
     panel.classList.remove("hidden");
-    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
+    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0,40)}"`;
     sendReplyBtn.dataset.parentId = parentId;
 
     db.collection("messages")
-        .orderBy("timestamp", "asc")
-        .onSnapshot((snapshot) => {
-            list.innerHTML = "";
-            snapshot.forEach((doc) => {
-                const msg = doc.data();
-                if (msg.replyTo !== parentId) return;
-                const isOwn = msg.userId === userId;
-                const time =
-                    msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
-                        : "Sending...";
-                list.innerHTML += `
-                    <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-                        <div class="msg-top">
-                            <strong>${msg.name}</strong>
-                            <span class="msg-time">${time}</span>
-                        </div>
-                        <div class="msg-text">${escapeHtml(msg.text)}</div>
-                        <div class="msg-actions">
-                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
-                        </div>
-                    </div>
-                `;
-            });
-            list.scrollTop = list.scrollHeight;
-        });
+      .orderBy("timestamp", "asc")
+      .onSnapshot((snapshot) => {
+          list.innerHTML = "";
+          snapshot.forEach((doc) => {
+              const msg = doc.data();
+              if (msg.replyTo !== parentId) return;
+
+              const isOwn = msg.userId === userId;
+              const time = msg.timestamp && msg.timestamp.toDate
+                  ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
+                  : "Sending...";
+
+              list.innerHTML += `
+                  <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
+                      <div class="msg-top">
+                          <strong>${msg.name}</strong>
+                          <span class="msg-time">${time}</span>
+                      </div>
+                      <div class="msg-text">${escapeHtml(msg.text)}</div>
+                      <div class="msg-actions">
+                          ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
+                      </div>
+                  </div>
+              `;
+          });
+          list.scrollTop = list.scrollHeight;
+      });
 
     sendReplyBtn.onclick = () => {
         const text = replyInput.value.trim();
@@ -286,15 +292,16 @@ function closeReplies() {
 // DELETE
 function deleteMessage(messageId, parentId) {
     db.collection("messages").doc(messageId).delete();
+
     if (parentId === "null") {
         db.collection("messages")
-            .where("replyTo", "==", messageId)
-            .get()
-            .then((snapshot) => {
-                const batch = db.batch();
-                snapshot.forEach((doc) => batch.delete(doc.ref));
-                return batch.commit();
-            });
+          .where("replyTo", "==", messageId)
+          .get()
+          .then((snapshot) => {
+              const batch = db.batch();
+              snapshot.forEach((doc) => batch.delete(doc.ref));
+              return batch.commit();
+          });
     }
 }
 
