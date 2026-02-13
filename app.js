@@ -113,6 +113,34 @@ function loadChat(name) {
     const messagesDiv = document.getElementById("messages");
     const themeToggle = document.getElementById("themeToggle");
 
+    // Typing indicator elements
+    const typingIndicator = document.createElement("div");
+    typingIndicator.id = "typing-indicator";
+    typingIndicator.style.display = "none";
+    typingIndicator.style.fontStyle = "italic";
+    typingIndicator.style.padding = "5px";
+    typingIndicator.textContent = "Someone is typing...";
+    messagesDiv.parentNode.insertBefore(typingIndicator, messagesDiv.nextSibling);
+
+    let typingTimeout;
+    msgInput.addEventListener("input", () => {
+        db.collection("typing").doc("status").set({
+            [userId]: msgInput.value.length > 0
+        });
+    });
+
+    db.collection("typing").doc("status").onSnapshot((doc) => {
+        const data = doc.data() || {};
+        const someoneTyping = Object.keys(data).some(id => id !== userId && data[id]);
+        typingIndicator.style.display = someoneTyping ? "block" : "none";
+        if (someoneTyping) {
+            typingIndicator.textContent = "Someone is typing...";
+            // play sound
+            const audio = new Audio("https://freesound.org/data/previews/337/337049_3231531-lq.mp3");
+            audio.play().catch(() => {});
+        }
+    });
+
     // SEND MAIN MESSAGE
     sendBtn.onclick = () => {
         const text = msgInput.value.trim();
@@ -127,6 +155,9 @@ function loadChat(name) {
         });
 
         msgInput.value = "";
+        db.collection("typing").doc("status").set({
+            [userId]: false
+        });
     };
 
     // LIVE MAIN MESSAGES (FIXED)
