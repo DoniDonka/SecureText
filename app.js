@@ -113,49 +113,6 @@ function loadChat(name) {
     const messagesDiv = document.getElementById("messages");
     const themeToggle = document.getElementById("themeToggle");
 
-    // ----------------------
-    // APPROVED USERS SIDEBAR
-    // ----------------------
-    const sidebarDiv = document.createElement("div");
-    sidebarDiv.id = "user-sidebar";
-    sidebarDiv.style.cssText = `
-        width:200px;
-        background:#111;
-        color:white;
-        padding:10px;
-        overflow-y:auto;
-        flex-shrink:0;
-    `;
-    sidebarDiv.innerHTML = `<h3>Users Online</h3><div id="approvedUsersList"></div>`;
-
-    const chatScreen = document.getElementById("chat-screen");
-    if (chatScreen) {
-        chatScreen.style.display = "flex";
-        chatScreen.style.height = "100vh";
-
-        const mainContent = chatScreen.querySelector("div:first-child");
-        if (mainContent) {
-            chatScreen.insertBefore(sidebarDiv, mainContent);
-            mainContent.style.flex = "1";
-        }
-    }
-
-    const approvedUsersList = document.getElementById("approvedUsersList");
-    db.collection("pendingUsers")
-      .where("approved", "==", true)
-      .orderBy("createdAt")
-      .onSnapshot((snapshot) => {
-          if (!approvedUsersList) return;
-          approvedUsersList.innerHTML = "";
-          snapshot.forEach((doc) => {
-              const user = doc.data();
-              const div = document.createElement("div");
-              div.textContent = user.name;
-              div.style.padding = "4px 0";
-              approvedUsersList.appendChild(div);
-          });
-      });
-
     // SEND MAIN MESSAGE
     sendBtn.onclick = () => {
         const text = msgInput.value.trim();
@@ -172,7 +129,7 @@ function loadChat(name) {
         msgInput.value = "";
     };
 
-    // LIVE MAIN MESSAGES (FIXED)
+    // LIVE MAIN MESSAGES
     db.collection("messages")
         .orderBy("timestamp", "asc")
         .onSnapshot((snapshot) => {
@@ -180,16 +137,11 @@ function loadChat(name) {
             snapshot.forEach((doc) => {
                 const msg = doc.data();
                 if (msg.replyTo !== null) return;
-
                 const isOwn = msg.userId === userId;
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                          })
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
                         : "Sending...";
-
                 messagesDiv.innerHTML += `
                     <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
                         <div class="msg-top">
@@ -200,25 +152,18 @@ function loadChat(name) {
                         <div class="msg-actions">
                             <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">Reply</button>
                             <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(msg.text || "")}">View replies</button>
-                            ${
-                                isOwn
-                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>`
-                                    : ""
-                            }
+                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
                         </div>
                     </div>
                 `;
             });
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }, (error) => {
-            console.error("Firestore listener error:", error);
-        });
+        }, (error) => { console.error("Firestore listener error:", error); });
 
     // THEME TOGGLE
     themeToggle.onclick = () => {
         const screen = document.getElementById("chat-screen");
         const isDay = screen.classList.contains("day");
-
         if (isDay) {
             screen.classList.remove("day");
             screen.classList.add("night");
@@ -229,6 +174,46 @@ function loadChat(name) {
             themeToggle.textContent = "☀️";
         }
     };
+
+    // ----------------------
+    // APPROVED USERS SIDEBAR (NON-INTRUSIVE)
+    // ----------------------
+    if (!document.getElementById("approved-sidebar")) {
+        const approvedSidebar = document.createElement("div");
+        approvedSidebar.id = "approved-sidebar";
+        approvedSidebar.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 0;
+            width: 180px;
+            height: calc(100% - 100px);
+            background-color: #111;
+            color: #fff;
+            padding: 10px;
+            overflow-y: auto;
+            border-left: 2px solid #333;
+            z-index: 999;
+            font-family: sans-serif;
+        `;
+        approvedSidebar.innerHTML = `<h4>Approved Users</h4><div id="approved-users-list"></div>`;
+        document.body.appendChild(approvedSidebar);
+    }
+
+    const approvedUsersList = document.getElementById("approved-users-list");
+    db.collection("pendingUsers")
+      .where("approved", "==", true)
+      .orderBy("createdAt", "asc")
+      .onSnapshot((snapshot) => {
+          if (!approvedUsersList) return;
+          approvedUsersList.innerHTML = "";
+          snapshot.forEach((doc) => {
+              const user = doc.data();
+              const div = document.createElement("div");
+              div.textContent = user.name;
+              div.style.padding = "4px 0";
+              approvedUsersList.appendChild(div);
+          });
+      });
 }
 
 // ----------------------
@@ -256,16 +241,11 @@ function openReplies(parentId, parentText) {
             snapshot.forEach((doc) => {
                 const msg = doc.data();
                 if (msg.replyTo !== parentId) return;
-
                 const isOwn = msg.userId === userId;
                 const time =
                     msg.timestamp && msg.timestamp.toDate
-                        ? msg.timestamp.toDate().toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                          })
+                        ? msg.timestamp.toDate().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
                         : "Sending...";
-
                 list.innerHTML += `
                     <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
                         <div class="msg-top">
@@ -274,11 +254,7 @@ function openReplies(parentId, parentText) {
                         </div>
                         <div class="msg-text">${escapeHtml(msg.text)}</div>
                         <div class="msg-actions">
-                            ${
-                                isOwn
-                                    ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>`
-                                    : ""
-                            }
+                            ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
                         </div>
                     </div>
                 `;
@@ -310,7 +286,6 @@ function closeReplies() {
 // DELETE
 function deleteMessage(messageId, parentId) {
     db.collection("messages").doc(messageId).delete();
-
     if (parentId === "null") {
         db.collection("messages")
             .where("replyTo", "==", messageId)
@@ -358,4 +333,4 @@ function escapeHtml(str) {
         .replace(/>/g, "&gt;");
 }
 
-});
+}); // END DOMContentLoaded
