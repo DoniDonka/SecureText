@@ -58,3 +58,29 @@ export async function sendThreadMessage(classId, parentId, text) {
     { threadCount: increment(1) }
   );
 }
+export async function editMessage(classId, messageId, newText) {
+  await updateDoc(
+    doc(db, "classes", classId, "messages", messageId),
+    {
+      text: newText,
+      edited: true
+    }
+  );
+}
+export async function updatePresence(classId, online) {
+  await setDoc(
+    doc(db, "classes", classId, "presence", auth.currentUser.uid),
+    {
+      online,
+      lastSeen: Date.now()
+    }
+  );
+}
+export async function markSeen(classId, messageId) {
+  await updateDoc(
+    doc(db, "classes", classId, "messages", messageId),
+    {
+      [`seen.${auth.currentUser.uid}`]: true
+    }
+  );
+}
