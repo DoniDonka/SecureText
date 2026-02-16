@@ -55,19 +55,38 @@ function loadClass(classId) {
             const tr = document.createElement("tr");
             const nameTd = document.createElement("td");
             nameTd.textContent = doc.data().name;
+            
             const approveTd = document.createElement("td");
             const denyTd = document.createElement("td");
+            const banTd = document.createElement("td");
+
             const approveBtn = document.createElement("button");
             approveBtn.textContent = "Approve";
             approveBtn.onclick = () => doc.ref.update({approved:true});
+
             const denyBtn = document.createElement("button");
             denyBtn.textContent = "Deny";
             denyBtn.onclick = () => doc.ref.delete();
+
+            const banBtn = document.createElement("button");
+            banBtn.textContent = "Ban";
+            banBtn.onclick = () => {
+                db.collection("bannedUsers").add({
+                    name: doc.data().name,
+                    classId: classId
+                });
+                doc.ref.delete();
+            };
+
             approveTd.appendChild(approveBtn);
             denyTd.appendChild(denyBtn);
+            banTd.appendChild(banBtn);
+
             tr.appendChild(nameTd);
             tr.appendChild(approveTd);
             tr.appendChild(denyTd);
+            tr.appendChild(banTd);
+
             pendingUsersTable.appendChild(tr);
         });
     });
@@ -96,17 +115,44 @@ function loadClass(classId) {
         });
         announcementInput.value = "";
     };
+
     db.collection("announcements").where("classId","==",classId).orderBy("timestamp")
     .onSnapshot(snapshot => {
         announcementsList.innerHTML = "";
         snapshot.forEach(doc => {
             const p = document.createElement("p");
-            p.textContent = doc.data().text;
+            const time = doc.data().timestamp && doc.data().timestamp.toDate ? doc.data().timestamp.toDate().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "";
+            p.textContent = `[${time}] ${doc.data().text}`;
             announcementsList.appendChild(p);
         });
     });
 
-    // LIVE CHAT
+    // --- LIVE CHAT ---
+    // Add chat input for admin
+    let chatInputDiv = document.createElement("div");
+    chatInputDiv.style.margin = "5px 0";
+    let chatInput = document.createElement("input");
+    chatInput.type = "text";
+    chatInput.placeholder = "Type a message as admin";
+    chatInput.style.width = "70%";
+    let chatSendBtn = document.createElement("button");
+    chatSendBtn.textContent = "Send";
+    chatSendBtn.onclick = () => {
+        const text = chatInput.value.trim();
+        if(!text) return;
+        db.collection("messages").add({
+            classId: classId,
+            name: "Admin",
+            userId: "admin",
+            text: text,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        chatInput.value = "";
+    };
+    chatInputDiv.appendChild(chatInput);
+    chatInputDiv.appendChild(chatSendBtn);
+    adminScreen.appendChild(chatInputDiv);
+
     db.collection("messages").where("classId","==",classId).orderBy("timestamp")
     .onSnapshot(snapshot => {
         chatMessages.innerHTML = "";
