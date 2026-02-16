@@ -1,171 +1,280 @@
 document.addEventListener("DOMContentLoaded", () => {
-const db = firebase.firestore();
+  const $ = (id) => document.getElementById(id);
 
-// --- CONFIG: ADMIN EMAILS ---
-const admins = {
-    "doni@admin.com": "DoniClass",
-    "jimboy@admin.com": "EthanClass"
-};
+  let currentClassId = null;
+  let currentClassName = null;
 
-// --- LOGIN ---
-let email = prompt("Enter admin email:");
-if(!admins[email]) {
-    alert("Not an admin!");
+  function classDocRef(classId) {
+    return db.collection("classes").doc(classId);
+  }
+  function pendingCol(classId) {
+    return classDocRef(classId).collection("pendingUsers");
+  }
+  function bannedCol(classId) {
+    return classDocRef(classId).collection("bannedUsers");
+  }
+  function messagesCol(classId) {
+    return classDocRef(classId).collection("messages");
+  }
+  function announcementsCol(classId) {
+    return classDocRef(classId).collection("announcements");
+  }
+
+  // ===== login =====
+  $("loginBtn").onclick = async () => {
+    const email = $("adminEmail").value.trim();
+    const pass = $("adminPassword").value.trim();
+    $("loginError").textContent = "";
+
+    if (!email || !pass) {
+      $("loginError").textContent = "Enter email + password.";
+      return;
+    }
+
+    try {
+      await auth.signInWithEmailAndPassword(email, pass);
+      $("admin-login").style.display = "none";
+      $("admin-dashboard").style.display = "block";
+      $("adminInfo").textContent = `Logged in as: ${email}`;
+      loadAllowedClasses(email);
+    } catch (e) {
+      console.error(e);
+      $("loginError").textContent = e.message || "Login failed.";
+    }
+  };
+
+  // logout
+  $("logoutBtn").onclick = async () => {
+    try { await auth.signOut(); } catch {}
     location.reload();
-} else {
-    document.getElementById("adminName").textContent = `Logged in as ${email}`;
-}
+  };
 
-// --- LOGOUT ---
-document.getElementById("logoutBtn").onclick = () => location.reload();
+  // ===== find which classes this admin can manage =====
+  async function loadAllowedClasses(adminEmail) {
+    $("classButtons").innerHTML = "";
+    $("classError").textContent = "";
 
-// --- LOAD CLASSES ---
-const classesDiv = document.getElementById("classes");
-const classError = document.getElementById("classError");
-const adminScreen = document.getElementById("admin-screen");
-const classTitle = document.getElementById("classTitle");
-const pendingUsersTable = document.querySelector("#pendingUsersTable tbody");
-const bannedUsersTable = document.querySelector("#bannedUsersTable tbody");
-const announcementInput = document.getElementById("announcementInput");
-const announceBtn = document.getElementById("announceBtn");
-const announcementsList = document.getElementById("announcementsList");
-const chatMessages = document.getElementById("chatMessages");
+    try {
+      // admins array contains the email
+      const snap = await db.collection("classes")
+        .where("admins", "array-contains", adminEmail)
+        .get();
 
-let currentClass = null;
+      if (snap.empty) {
+        $("classError").textContent = "No class assigned to this admin email in Firestore.";
+        return;
+      }
 
-// ADMIN can only manage their own class
-const allowedClass = admins[email];
-const btn = document.createElement("button");
-btn.textContent = allowedClass;
-btn.onclick = () => loadClass(allowedClass);
-classesDiv.appendChild(btn);
+      snap.forEach((doc) => {
+        const data = doc.data() || {};
+        const btn = document.createElement("button");
+        btn.textContent = data.name || doc.id;
+        btn.onclick = () => openClass(doc.id, data.name || doc.id);
+        $("classButtons").appendChild(btn);
+      });
+    } catch (e) {
+      console.error(e);
+      $("classError").textContent = "Failed loading admin classes.";
+    }
+  }
 
-// --- LOAD CLASS FUNCTION ---
-function loadClass(classId) {
-    currentClass = classId;
-    classesDiv.style.display = "none";
-    adminScreen.style.display = "block";
-    classTitle.textContent = `Managing: ${classId}`;
+  function openClass(classId, className) {
+    currentClassId = classId;
+    currentClassName = className;
 
-    // Load pending users
-    db.collection("pendingUsers").where("classId","==",classId).where("approved","==",false)
-    .onSnapshot(snapshot => {
-        pendingUsersTable.innerHTML = "";
-        snapshot.forEach(doc => {
-            const tr = document.createElement("tr");
-            const nameTd = document.createElement("td");
-            nameTd.textContent = doc.data().name;
-            
-            const approveTd = document.createElement("td");
-            const denyTd = document.createElement("td");
-            const banTd = document.createElement("td");
+    $("admin-screen").style.display = "block";
+    $("classTitle").textContent = `Managing: ${className} (${classId})`;
 
-            const approveBtn = document.createElement("button");
-            approveBtn.textContent = "Approve";
-            approveBtn.onclick = () => doc.ref.update({approved:true});
+    wirePending();
+    wireBanned();
+    wireAnnouncements();
+    wireChat();
+  }
 
-            const denyBtn = document.createElement("button");
-            denyBtn.textContent = "Deny";
-            denyBtn.onclick = () => doc.ref.delete();
+  // ===== pending users =====
+  function wirePending() {
+    const tbody = $("pendingUsersTable").querySelector("tbody");
+    tbody.innerHTML = "";
 
-            const banBtn = document.createElement("button");
-            banBtn.textContent = "Ban";
-            banBtn.onclick = () => {
-                db.collection("bannedUsers").add({
-                    name: doc.data().name,
-                    classId: classId
-                });
-                doc.ref.delete();
-            };
+    pendingCol(currentClassId)
+      .orderBy("createdAt", "asc")
+      .onSnapshot((snap) => {
+        tbody.innerHTML = "";
+        snap.forEach((doc) => {
+          const u = doc.data() || {};
+          if ((u.status || "pending") !== "pending") return; // only show pending
 
-            approveTd.appendChild(approveBtn);
-            denyTd.appendChild(denyBtn);
-            banTd.appendChild(banBtn);
+          const tr = document.createElement("tr");
 
-            tr.appendChild(nameTd);
-            tr.appendChild(approveTd);
-            tr.appendChild(denyTd);
-            tr.appendChild(banTd);
+          const tdName = document.createElement("td");
+          tdName.textContent = u.name || "(no name)";
 
-            pendingUsersTable.appendChild(tr);
+          const tdApprove = document.createElement("td");
+          const tdReject = document.createElement("td");
+          const tdBan = document.createElement("td");
+
+          const approveBtn = document.createElement("button");
+          approveBtn.textContent = "Approve";
+          approveBtn.onclick = () => doc.ref.update({
+            approved: true,
+            status: "approved",
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          const rejectBtn = document.createElement("button");
+          rejectBtn.textContent = "Reject";
+          rejectBtn.onclick = () => doc.ref.update({
+            approved: false,
+            status: "rejected",
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          const banBtn = document.createElement("button");
+          banBtn.textContent = "Ban";
+          banBtn.onclick = async () => {
+            // mark pending as banned
+            await doc.ref.update({
+              approved: false,
+              status: "banned",
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // create bannedUsers/{userId}
+            await bannedCol(currentClassId).doc(doc.id).set({
+              userId: doc.id,
+              name: u.name || "",
+              bannedAt: firebase.firestore.FieldValue.serverTimestamp(),
+              by: auth.currentUser ? auth.currentUser.email : "admin"
+            });
+
+            // optional: remove their messages
+            const msgSnap = await messagesCol(currentClassId).get();
+            const batch = db.batch();
+            msgSnap.forEach((m) => {
+              const d = m.data() || {};
+              if (d.userId === doc.id) batch.delete(m.ref);
+            });
+            await batch.commit();
+          };
+
+          tdApprove.appendChild(approveBtn);
+          tdReject.appendChild(rejectBtn);
+          tdBan.appendChild(banBtn);
+
+          tr.appendChild(tdName);
+          tr.appendChild(tdApprove);
+          tr.appendChild(tdReject);
+          tr.appendChild(tdBan);
+          tbody.appendChild(tr);
         });
+      });
+  }
+
+  // ===== banned users =====
+  function wireBanned() {
+    const tbody = $("bannedUsersTable").querySelector("tbody");
+    tbody.innerHTML = "";
+
+    bannedCol(currentClassId).onSnapshot((snap) => {
+      tbody.innerHTML = "";
+      snap.forEach((doc) => {
+        const b = doc.data() || {};
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.textContent = b.name || "";
+
+        const tdId = document.createElement("td");
+        tdId.textContent = doc.id;
+
+        const tdUnban = document.createElement("td");
+        const unbanBtn = document.createElement("button");
+        unbanBtn.textContent = "Unban";
+        unbanBtn.onclick = async () => {
+          await doc.ref.delete();
+          // also clear status so they can re-request
+          await pendingCol(currentClassId).doc(doc.id).set({
+            approved: false,
+            status: "rejected",
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        };
+        tdUnban.appendChild(unbanBtn);
+
+        tr.appendChild(tdName);
+        tr.appendChild(tdId);
+        tr.appendChild(tdUnban);
+        tbody.appendChild(tr);
+      });
     });
+  }
 
-    // Load banned users
-    db.collection("bannedUsers").where("classId","==",classId)
-    .onSnapshot(snapshot => {
-        bannedUsersTable.innerHTML = "";
-        snapshot.forEach(doc => {
-            const tr = document.createElement("tr");
-            const nameTd = document.createElement("td");
-            nameTd.textContent = doc.data().name;
-            tr.appendChild(nameTd);
-            bannedUsersTable.appendChild(tr);
-        });
-    });
+  // ===== announcements =====
+  function wireAnnouncements() {
+    $("announceBtn").onclick = async () => {
+      const text = $("announcementInput").value.trim();
+      if (!text) return;
 
-    // ANNOUNCEMENTS
-    announceBtn.onclick = () => {
-        const text = announcementInput.value.trim();
-        if(!text) return;
-        db.collection("announcements").add({
-            classId: classId,
-            text: text,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        announcementInput.value = "";
+      await announcementsCol(currentClassId).add({
+        text,
+        by: auth.currentUser ? auth.currentUser.email : "admin",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      $("announcementInput").value = "";
     };
 
-    db.collection("announcements").where("classId","==",classId).orderBy("timestamp")
-    .onSnapshot(snapshot => {
-        announcementsList.innerHTML = "";
-        snapshot.forEach(doc => {
-            const p = document.createElement("p");
-            const time = doc.data().timestamp && doc.data().timestamp.toDate ? doc.data().timestamp.toDate().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "";
-            p.textContent = `[${time}] ${doc.data().text}`;
-            announcementsList.appendChild(p);
+    announcementsCol(currentClassId)
+      .orderBy("timestamp", "asc")
+      .onSnapshot((snap) => {
+        $("announcementsList").innerHTML = "";
+        snap.forEach((doc) => {
+          const a = doc.data() || {};
+          const t = a.timestamp && a.timestamp.toDate
+            ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "";
+          const div = document.createElement("div");
+          div.style.margin = "6px 0";
+          div.textContent = `[${t}] ${a.text || ""}`;
+          $("announcementsList").appendChild(div);
         });
-    });
+        if (snap.empty) $("announcementsList").innerHTML = "<div style='opacity:.7'>No announcements yet.</div>";
+      });
+  }
 
-    // --- LIVE CHAT ---
-    // Add chat input for admin
-    let chatInputDiv = document.createElement("div");
-    chatInputDiv.style.margin = "5px 0";
-    let chatInput = document.createElement("input");
-    chatInput.type = "text";
-    chatInput.placeholder = "Type a message as admin";
-    chatInput.style.width = "70%";
-    let chatSendBtn = document.createElement("button");
-    chatSendBtn.textContent = "Send";
-    chatSendBtn.onclick = () => {
-        const text = chatInput.value.trim();
-        if(!text) return;
-        db.collection("messages").add({
-            classId: classId,
-            name: "Admin",
-            userId: "admin",
-            text: text,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        chatInput.value = "";
+  // ===== admin chat =====
+  function wireChat() {
+    $("adminSendBtn").onclick = async () => {
+      const text = $("adminChatInput").value.trim();
+      if (!text) return;
+
+      await messagesCol(currentClassId).add({
+        name: "Admin",
+        userId: "admin",
+        text,
+        replyTo: null,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      $("adminChatInput").value = "";
     };
-    chatInputDiv.appendChild(chatInput);
-    chatInputDiv.appendChild(chatSendBtn);
-    adminScreen.appendChild(chatInputDiv);
 
-    db.collection("messages").where("classId","==",classId).orderBy("timestamp")
-    .onSnapshot(snapshot => {
-        chatMessages.innerHTML = "";
-        snapshot.forEach(doc => {
-            const msg = doc.data();
-            const div = document.createElement("div");
-            div.className = `msg ${msg.userId === "admin"? "own" : ""}`;
-            const time = msg.timestamp && msg.timestamp.toDate ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "Sending...";
-            div.textContent = `[${time}] ${msg.name}: ${msg.text}`;
-            chatMessages.appendChild(div);
+    messagesCol(currentClassId)
+      .orderBy("timestamp", "asc")
+      .onSnapshot((snap) => {
+        const box = $("chatMessages");
+        box.innerHTML = "";
+        snap.forEach((doc) => {
+          const m = doc.data() || {};
+          const t = m.timestamp && m.timestamp.toDate
+            ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "Sending...";
+          const div = document.createElement("div");
+          div.className = "msg";
+          div.textContent = `[${t}] ${m.name || ""}: ${m.text || ""}`;
+          box.appendChild(div);
         });
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    });
-}
-
+        box.scrollTop = box.scrollHeight;
+      });
+  }
 });

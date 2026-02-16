@@ -1,68 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureText</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureText</title>
 
-    <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <!-- Firebase v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
-    <style>
-        body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; }
-        input { padding: 8px; margin: 5px; border-radius: 4px; border: 1px solid #333; }
-        button { padding: 8px 12px; border-radius: 4px; background: #222; color: #fff; border: 1px solid #333; cursor: pointer; }
-        button:hover { background: #333; }
-        .class-btn { display: block; margin: 10px auto; width: 200px; }
-        #chat-screen { display: none; margin-top: 20px; }
-        #messages { max-height: 300px; overflow-y: auto; border: 1px solid #333; padding: 10px; margin: 10px auto; width: 90%; }
-        .msg { margin-bottom: 10px; }
-        .own { color: #4af; }
-        #typingIndicator { font-style: italic; margin: 5px; }
-    </style>
+  <style>
+    /* keep your ADMIN PATH button */
+    .admin-path-btn {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      padding: 6px 14px;
+      background-color: #111;
+      color: white;
+      border: 1px solid #333;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .admin-path-btn:hover { background-color: #222; }
+
+    /* screens */
+    .screen { display:none; }
+    .screen.active { display:block; }
+    #root { position:relative; max-width:900px; margin:0 auto; padding:20px; }
+    .classes-wrap button { display:block; margin:10px 0; }
+    .notice { margin-top:10px; }
+    .notice.good { color:#7CFF7C; }
+    .notice.bad { color:#FF6B6B; }
+    .notice.warn { color:#FFD36B; }
+  </style>
 </head>
+
 <body>
+  <div id="root">
 
-    <div id="class-screen">
-        <h1>SecureText</h1>
-        <p>Select your class:</p>
-        <div id="classes"></div>
-        <p id="classError" style="color:red;"></p>
+    <button class="admin-path-btn"
+      onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
+      ADMIN PATH
+    </button>
+
+    <!-- CLASS SELECT -->
+    <div id="screen-class" class="screen active">
+      <h1>SecureText</h1>
+      <p>Select your class:</p>
+      <div id="classes" class="classes-wrap"></div>
+      <p id="classError" class="notice bad"></p>
     </div>
 
-    <div id="pin-screen" style="display:none;">
-        <h2>Enter PIN for <span id="selectedClassName"></span></h2>
-        <input type="text" id="pinInput" placeholder="Class PIN">
-        <button id="pinBtn">Submit PIN</button>
-        <p id="pinError" style="color:red;"></p>
+    <!-- PIN -->
+    <div id="screen-pin" class="screen">
+      <h1>SecureText</h1>
+      <p>Enter PIN for: <strong id="pinClassName"></strong></p>
+      <input id="pinInput" type="password" placeholder="Class PIN" />
+      <button id="pinContinueBtn">Continue</button>
+      <p id="pinError" class="notice bad"></p>
+      <button id="pinBackBtn">Back</button>
     </div>
 
-    <div id="name-screen" style="display:none;">
-        <h2>Enter your name</h2>
-        <input id="nameInput" type="text" placeholder="Your name">
-        <button id="continueBtn">Continue</button>
-        <p id="errorMsg" style="color:red;"></p>
+    <!-- NAME -->
+    <div id="screen-name" class="screen">
+      <h1>SecureText</h1>
+      <p>Enter your name:</p>
+      <input id="nameInput" type="text" placeholder="Your name" />
+      <button id="nameContinueBtn">Continue</button>
+      <p id="nameError" class="notice bad"></p>
+      <button id="nameBackBtn">Back</button>
     </div>
 
-    <div id="waiting-screen" style="display:none;">
-        <h2>Please wait for admin approval</h2>
-        <p id="waitingName"></p>
+    <!-- WAITING -->
+    <div id="screen-wait" class="screen">
+      <h1>SecureText</h1>
+      <p id="waitText"></p>
+      <p>Please wait for admin approval.</p>
+      <p id="waitStatus" class="notice"></p>
+      <button id="resetBtn">Start over</button>
     </div>
 
-    <div id="chat-screen" class="night">
-        <h2>SecureText Chat - <span id="chatClassName"></span></h2>
-        <div id="messages"></div>
-        <div id="typingIndicator"></div>
-        <input id="msgInput" type="text" placeholder="Type a message">
-        <button id="sendBtn">Send</button>
-        <button id="logoutBtn">Logout</button>
+    <!-- CHAT -->
+    <div id="screen-chat" class="screen">
+      <div id="chat-screen" class="night">
+        <header class="chat-header">
+          <div>
+            <h1 id="chatWelcome">Welcome!</h1>
+            <p class="subtitle" id="chatSubtitle">SecureText chat</p>
+          </div>
+          <div class="chat-controls">
+            <button id="themeToggle">🌙</button>
+            <button id="logoutBtn">Logout</button>
+          </div>
+        </header>
+
+        <div id="announcementsBox" style="padding:10px; border:1px solid #333; margin:10px 0;">
+          <strong>Announcements</strong>
+          <div id="announcementsList" style="margin-top:8px;"></div>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div id="typingIndicator" style="font-style: italic; margin: 6px 0;"></div>
+
+        <div id="replies-panel" class="replies hidden">
+          <div class="replies-header">
+            <span id="replies-title">Replies</span>
+            <button id="closeReplies">Close</button>
+          </div>
+          <div id="replies-list" class="replies-list"></div>
+          <div class="reply-input">
+            <input id="replyMsgInput" type="text" placeholder="Reply...">
+            <button id="sendReplyBtn">Send</button>
+          </div>
+        </div>
+
+        <div id="chat-input">
+          <input id="msgInput" type="text" placeholder="Type a message">
+          <button id="sendBtn">Send</button>
+        </div>
+
+        <p id="chatStatus" class="notice"></p>
+      </div>
     </div>
 
-    <script src="firebase.js"></script>
-    <script src="app.js"></script>
+  </div>
+
+  <script src="firebase.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

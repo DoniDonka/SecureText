@@ -1,70 +1,82 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SecureText Admin</title>
+  <meta charset="UTF-8">
+  <title>SecureText Admin</title>
+  <link rel="stylesheet" href="style.css">
 
-<link rel="stylesheet" href="style.css">
+  <!-- Firebase v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
-<style>
-body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; }
-button { padding: 6px 12px; border-radius: 4px; background: #222; color: #fff; border: 1px solid #333; cursor: pointer; }
-button:hover { background: #333; }
-#admin-screen { max-width: 900px; margin: auto; text-align: left; }
-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-th, td { border: 1px solid #333; padding: 5px; text-align: left; }
-th { background: #222; }
-.msg { margin-bottom: 8px; }
-.own { color: #4af; }
-</style>
+  <style>
+    body { font-family: Arial, sans-serif; background:#111; color:#fff; padding:20px; }
+    button { padding:6px 12px; border-radius:4px; background:#222; color:#fff; border:1px solid #333; cursor:pointer; }
+    button:hover { background:#333; }
+    input { padding:6px; border-radius:4px; border:1px solid #333; background:#0e0e0e; color:#fff; }
+    table { width:100%; border-collapse:collapse; margin:10px 0; }
+    th, td { border:1px solid #333; padding:6px; }
+    th { background:#1b1b1b; }
+    #chatMessages { height:300px; overflow-y:auto; border:1px solid #333; padding:10px; }
+    .msg { margin-bottom:6px; }
+  </style>
 </head>
 <body>
 
-<h1>SecureText Admin Panel</h1>
-<p id="adminName"></p>
-<button id="logoutBtn">Logout</button>
+  <!-- ADMIN LOGIN SCREEN -->
+  <div id="admin-login">
+    <h1>Admin Login</h1>
+    <input type="email" id="adminEmail" placeholder="Email">
+    <input type="password" id="adminPassword" placeholder="Password">
+    <button id="loginBtn">Login</button>
+    <p id="loginError" style="color:#ff6b6b;"></p>
+  </div>
 
-<hr>
+  <!-- ADMIN DASHBOARD -->
+  <div id="admin-dashboard" style="display:none;">
+    <h1>Admin Panel</h1>
+    <p id="adminInfo"></p>
 
-<h2>Select Class to Manage</h2>
-<div id="classes"></div>
-<p id="classError" style="color:red;"></p>
+    <h2>Select Class</h2>
+    <div id="classButtons"></div>
+    <p id="classError" style="color:#ff6b6b;"></p>
 
-<div id="admin-screen" style="display:none;">
-    <h2 id="classTitle"></h2>
+    <div id="admin-screen" style="display:none;">
+      <h2 id="classTitle"></h2>
 
-    <h3>Pending Users</h3>
-    <table id="pendingUsersTable">
+      <h3>Pending Users</h3>
+      <table id="pendingUsersTable">
         <thead>
-            <tr><th>Name</th><th>Approve</th><th>Deny</th></tr>
+          <tr><th>Name</th><th>Approve</th><th>Reject</th><th>Ban</th></tr>
         </thead>
         <tbody></tbody>
-    </table>
+      </table>
 
-    <h3>Banned Users</h3>
-    <table id="bannedUsersTable">
-        <thead>
-            <tr><th>Name</th></tr>
-        </thead>
+      <h3>Banned Users</h3>
+      <table id="bannedUsersTable">
+        <thead><tr><th>Name</th><th>UserId</th><th>Unban</th></tr></thead>
         <tbody></tbody>
-    </table>
+      </table>
 
-    <h3>Announcements</h3>
-    <input type="text" id="announcementInput" placeholder="Announcement text">
-    <button id="announceBtn">Send Announcement</button>
-    <div id="announcementsList"></div>
+      <h3>Announcements</h3>
+      <input id="announcementInput" type="text" placeholder="Announcement text">
+      <button id="announceBtn">Send</button>
+      <div id="announcementsList" style="margin-top:10px;"></div>
 
-    <h3>Live Chat</h3>
-    <div id="chatMessages" style="height:300px; overflow-y:auto; border:1px solid #333; padding:10px;"></div>
-</div>
+      <h3>Live Chat</h3>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <input id="adminChatInput" type="text" placeholder="Message as Admin" style="flex:1;">
+        <button id="adminSendBtn">Send</button>
+      </div>
+      <div id="chatMessages"></div>
 
-<script src="firebase.js"></script>
-<script src="admin.js"></script>
+      <button id="logoutBtn" style="margin-top:15px;">Logout</button>
+    </div>
+
+  </div>
+
+  <script src="firebase.js"></script>
+  <script src="admin.js"></script>
 </body>
 </html>
