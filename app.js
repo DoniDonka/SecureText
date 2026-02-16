@@ -2,6 +2,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // ===== helpers =====
   const $ = (id) => document.getElementById(id);
 
+  // Admin Path Button (only visible on class screen)
+  const adminPathBtn = $("adminPathBtn");
+
+  function setAdminPathVisible(isVisible) {
+    if (!adminPathBtn) return;
+    adminPathBtn.style.display = isVisible ? "block" : "none";
+  }
+
   // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
@@ -40,14 +48,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Also hide any old full-screen elements that can overlay and block clicks
     legacyFullScreens.forEach((id) => {
       const el = $(id);
-      // Do NOT hide the inner chat container when chat screen is active
-      // (chat container is inside screen-chat)
       if (id === "chat-screen") return;
       if (el) hardHideEl(el);
     });
 
     // Show the target screen
     hardShowEl(screens[key]);
+
+    // Admin Path button ONLY on class selector
+    setAdminPathVisible(key === "class");
   }
 
   function escapeHtml(str) {
