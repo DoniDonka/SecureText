@@ -256,3 +256,145 @@ button {
     background: #333;
     color: #fff;
 }
+/* =========================
+   CLIENT CHAT SCALING FIX
+   Paste at bottom of style.css
+   ========================= */
+
+/* Kill the outer page scroll while in chat */
+html, body {
+  height: 100%;
+}
+
+/* Your app renders screens into #root (from index.html) */
+#root {
+  min-height: 100vh;
+}
+
+/* Chat screen should consume full viewport height */
+#screen-chat {
+  height: 100vh;
+}
+
+/* Make the chat container a proper full-height flex layout */
+#chat-screen {
+  height: 100vh;
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;              /* key: prevents page scroll */
+  border-radius: 14px;
+}
+
+/* Header stays at top */
+.chat-header {
+  flex: 0 0 auto;
+}
+
+/* Announcements should NOT float center — make it a full-width bar */
+#announcementsBox {
+  flex: 0 0 auto;
+  margin: 10px 12px 0 12px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Prevent announcements list from taking too much height */
+#announcementsList {
+  max-height: 90px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+/* Messages should be the ONLY scrollable area */
+#messages.messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin: 10px 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.12);
+  border: 1px solid rgba(255,255,255,0.06);
+  scroll-behavior: smooth;
+}
+
+/* Keep typing indicator above input */
+#typingIndicator {
+  flex: 0 0 auto;
+  margin: 0 12px 8px 12px !important;
+  opacity: 0.85;
+}
+
+/* Input stays at bottom INSIDE the chat, not page */
+#chat-input {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 12px 14px 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(0,0,0,0.35);
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Input + send button sizing */
+#msgInput {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+#sendBtn {
+  padding: 11px 16px;
+  border-radius: 12px;
+}
+
+/* =========================
+   Smooth Animations
+   ========================= */
+.msg, .reply-msg {
+  animation: msgIn 160ms ease;
+  transform-origin: bottom;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px) scale(.995); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Subtle button hover */
+button {
+  transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+button:active {
+  transform: translateY(0);
+  opacity: 0.95;
+}
+
+/* Optional: nicer scrolling bar on messages */
+#messages.messages::-webkit-scrollbar {
+  width: 10px;
+}
+#messages.messages::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 20px;
+}
+#messages.messages::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.2);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  #chat-screen { border-radius: 0; }
+  #announcementsBox { margin: 8px 10px 0 10px; }
+  #messages.messages { margin: 8px 10px; }
+  #chat-input { padding: 10px; gap: 8px; }
+}
