@@ -2,14 +2,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // ===== helpers =====
   const $ = (id) => document.getElementById(id);
 
-  // Admin Path Button (only visible on class screen)
-  const adminPathBtn = $("adminPathBtn");
-
-  function setAdminPathVisible(isVisible) {
-    if (!adminPathBtn) return;
-    adminPathBtn.style.display = isVisible ? "block" : "none";
-  }
-
   // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
@@ -54,9 +46,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Show the target screen
     hardShowEl(screens[key]);
-
-    // Admin Path button ONLY on class selector
-    setAdminPathVisible(key === "class");
   }
 
   function escapeHtml(str) {
@@ -73,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem("className");
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
+    // do NOT clear rules acceptance here unless you want it to re-ask next time
   }
 
   function classDocRef(classId) {
@@ -97,6 +87,275 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function typingDoc(classId) {
     return classDocRef(classId).collection("meta").doc("typing");
+  }
+
+  // ===== RULES GATE (NEW) =====
+  function rulesKey(classId, userId) {
+    return `rulesAccepted:${classId}:${userId}`;
+  }
+
+  function hasAcceptedRules(classId, userId) {
+    return localStorage.getItem(rulesKey(classId, userId)) === "true";
+  }
+
+  function setAcceptedRules(classId, userId) {
+    localStorage.setItem(rulesKey(classId, userId), "true");
+  }
+
+  function showRulesGate({ classId, userId, userName, className }, onContinue) {
+    // If already accepted, go straight in
+    if (hasAcceptedRules(classId, userId)) {
+      onContinue();
+      return;
+    }
+
+    // Fire confetti once when approved hits this gate
+    try {
+      if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
+        window.ST_UI.confettiBurst(1400);
+      }
+    } catch {}
+
+    const root = $("root") || document.body;
+
+    // remove any existing gate
+    const old = document.getElementById("rulesGateOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "rulesGateOverlay";
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "99999";
+    overlay.style.display = "grid";
+    overlay.style.placeItems = "center";
+    overlay.style.padding = "16px";
+    overlay.style.background =
+      "radial-gradient(1200px 700px at 20% 10%, rgba(255,90,90,.10), transparent 60%)," +
+      "radial-gradient(900px 600px at 85% 20%, rgba(255,211,107,.10), transparent 55%)," +
+      "rgba(0,0,0,.78)";
+    overlay.style.backdropFilter = "blur(10px)";
+    overlay.style.pointerEvents = "all";
+
+    const card = document.createElement("div");
+    card.style.width = "min(860px, 96vw)";
+    card.style.borderRadius = "18px";
+    card.style.border = "1px solid rgba(255,255,255,.12)";
+    card.style.background =
+      "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
+    card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
+    card.style.padding = "22px 22px 18px 22px";
+    card.style.position = "relative";
+    card.style.overflow = "hidden";
+
+    // top stripe
+    const stripe = document.createElement("div");
+    stripe.style.position = "absolute";
+    stripe.style.inset = "-40% -40% auto -40%";
+    stripe.style.height = "240px";
+    stripe.style.background =
+      "conic-gradient(from 180deg, rgba(255,90,90,.0), rgba(255,90,90,.18), rgba(255,211,107,.14), rgba(255,90,90,.0))";
+    stripe.style.filter = "blur(12px)";
+    stripe.style.opacity = "0.9";
+    stripe.style.animation = "stSpin 4.8s linear infinite";
+    card.appendChild(stripe);
+
+    const styleTag = document.createElement("style");
+    styleTag.textContent = `
+      @keyframes stSpin { to { transform: rotate(360deg);} }
+      @keyframes stIn { from { opacity:0; transform: translateY(14px) scale(.985);} to { opacity:1; transform: translateY(0) scale(1);} }
+      @keyframes stPulse { 0%{ box-shadow: 0 0 0 rgba(255,90,90,0);} 50%{ box-shadow: 0 0 28px rgba(255,90,90,.10);} 100%{ box-shadow: 0 0 0 rgba(255,90,90,0);} }
+    `;
+    document.head.appendChild(styleTag);
+
+    card.style.animation = "stIn .35s ease";
+    card.style.transformOrigin = "center";
+
+    const content = document.createElement("div");
+    content.style.position = "relative";
+    content.style.zIndex = "2";
+    content.style.display = "grid";
+    content.style.gap = "14px";
+
+    const title = document.createElement("div");
+    title.style.display = "flex";
+    title.style.alignItems = "center";
+    title.style.justifyContent = "space-between";
+    title.style.gap = "12px";
+
+    const left = document.createElement("div");
+    left.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="
+          width:46px;height:46px;border-radius:14px;
+          background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255,255,255,.10);
+          display:grid;place-items:center;
+          box-shadow: 0 12px 35px rgba(0,0,0,.45);
+          font-weight:900;letter-spacing:.6px;
+          animation: stPulse 1.6s ease infinite;
+        ">!</div>
+        <div>
+          <div style="font-size:22px;font-weight:900;letter-spacing:.4px;">Rules & Conduct Agreement</div>
+          <div style="margin-top:4px;font-size:12px;opacity:.74;">
+            Class: <strong>${escapeHtml(className || classId)}</strong> • User: <strong>${escapeHtml(userName || "")}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const right = document.createElement("div");
+    right.innerHTML = `
+      <div style="text-align:right;">
+        <div style="font-size:12px;opacity:.78;">Approved ✅</div>
+        <div id="rulesDelayText" style="margin-top:3px;font-size:12px;opacity:.78;">Security delay: 30s</div>
+      </div>
+    `;
+
+    title.appendChild(left);
+    title.appendChild(right);
+
+    const box = document.createElement("div");
+    box.style.border = "1px solid rgba(255,255,255,.10)";
+    box.style.borderRadius = "16px";
+    box.style.background = "rgba(0,0,0,.30)";
+    box.style.padding = "14px 14px";
+    box.style.lineHeight = "1.4";
+
+    box.innerHTML = `
+      <div style="font-weight:900;letter-spacing:.2px;margin-bottom:10px;">Read carefully. These rules are enforced.</div>
+
+      <div style="display:grid;gap:8px;font-size:14px;">
+        <div>• <strong>No cursing / harassment.</strong></div>
+        <div>• <strong>No racial slurs</strong> or hate speech (instant ban).</div>
+        <div>• <strong>No threats</strong>, doxxing, or personal info.</div>
+        <div>• <strong>No spam</strong> or flooding chat.</div>
+        <div>• <strong>Respect admins</strong> and class members.</div>
+      </div>
+
+      <div style="margin-top:12px;font-size:12px;opacity:.78;">
+        Breaking rules may result in <strong>rejection</strong> or a <strong>ban</strong> without warning.
+      </div>
+    `;
+
+    const controls = document.createElement("div");
+    controls.style.display = "grid";
+    controls.style.gap = "10px";
+    controls.style.marginTop = "2px";
+
+    const checkWrap = document.createElement("label");
+    checkWrap.style.display = "flex";
+    checkWrap.style.alignItems = "center";
+    checkWrap.style.gap = "10px";
+    checkWrap.style.userSelect = "none";
+    checkWrap.style.cursor = "pointer";
+    checkWrap.style.opacity = "0.95";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = "rulesChk";
+    checkbox.style.transform = "scale(1.15)";
+    checkbox.style.cursor = "pointer";
+
+    const checkText = document.createElement("div");
+    checkText.innerHTML = `<div style="font-size:13px;"><strong>I understand</strong> and will follow the rules above.</div>
+                           <div style="font-size:12px;opacity:.72;">You must accept to enter chat.</div>`;
+
+    checkWrap.appendChild(checkbox);
+    checkWrap.appendChild(checkText);
+
+    const btnRow = document.createElement("div");
+    btnRow.style.display = "flex";
+    btnRow.style.justifyContent = "flex-end";
+    btnRow.style.gap = "10px";
+    btnRow.style.marginTop = "2px";
+
+    const lockedNote = document.createElement("div");
+    lockedNote.id = "rulesLockedNote";
+    lockedNote.style.marginTop = "6px";
+    lockedNote.style.fontSize = "12px";
+    lockedNote.style.opacity = "0.78";
+    lockedNote.textContent = "Please wait…";
+
+    const btn = document.createElement("button");
+    btn.id = "rulesAcceptBtn";
+    btn.type = "button";
+    btn.textContent = "I Understand";
+    btn.disabled = true;
+    btn.style.border = "1px solid rgba(255,255,255,.14)";
+    btn.style.background = "rgba(255,255,255,.06)";
+    btn.style.color = "rgba(255,255,255,.92)";
+    btn.style.padding = "10px 14px";
+    btn.style.borderRadius = "12px";
+    btn.style.cursor = "not-allowed";
+    btn.style.transition = "transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease";
+    btn.onmouseenter = () => { if (!btn.disabled) btn.style.transform = "translateY(-1px)"; };
+    btn.onmouseleave = () => { btn.style.transform = "translateY(0)"; };
+    btn.onmousedown = () => { if (!btn.disabled) btn.style.opacity = ".95"; };
+    btn.onmouseup = () => { btn.style.opacity = "1"; };
+
+    btnRow.appendChild(btn);
+
+    controls.appendChild(checkWrap);
+    controls.appendChild(btnRow);
+    controls.appendChild(lockedNote);
+
+    content.appendChild(title);
+    content.appendChild(box);
+    content.appendChild(controls);
+    card.appendChild(content);
+    overlay.appendChild(card);
+    root.appendChild(overlay);
+
+    // gating logic: 30s delay + 10s button lock + checkbox required
+    let delayLeft = 30;
+    let lockLeft = 10;
+
+    const delayEl = document.getElementById("rulesDelayText");
+    const tick = () => {
+      if (delayEl) delayEl.textContent = `Security delay: ${delayLeft}s`;
+      if (lockLeft > 0) {
+        lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
+      } else {
+        lockedNote.textContent = checkbox.checked
+          ? "You may continue."
+          : "Check the box to continue.";
+      }
+
+      // enable button only when BOTH are satisfied
+      const canClick = delayLeft <= 0 && lockLeft <= 0 && checkbox.checked;
+      btn.disabled = !canClick;
+      btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
+      btn.style.background = btn.disabled ? "rgba(255,255,255,.06)" : "rgba(60,255,160,.14)";
+      btn.style.borderColor = btn.disabled ? "rgba(255,255,255,.14)" : "rgba(60,255,160,.28)";
+    };
+
+    const interval = setInterval(() => {
+      if (delayLeft > 0) delayLeft--;
+      if (lockLeft > 0) lockLeft--;
+      tick();
+    }, 1000);
+
+    checkbox.addEventListener("change", tick);
+
+    tick();
+
+    btn.onclick = () => {
+      // if for any reason disabled, ignore
+      if (btn.disabled) return;
+
+      try { clearInterval(interval); } catch {}
+      setAcceptedRules(classId, userId);
+
+      // remove overlay and continue to chat
+      overlay.style.opacity = "0";
+      overlay.style.transition = "opacity .18s ease";
+      overlay.style.pointerEvents = "none";
+      setTimeout(() => {
+        try { overlay.remove(); } catch {}
+        onContinue();
+      }, 180);
+    };
   }
 
   // ===== state =====
@@ -176,6 +435,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const btn = document.createElement("button");
           btn.className = "class-btn";
           btn.type = "button";
+
+          // keep your tile styling: if you want, you can swap class-btn -> class-tile in html/css
           btn.textContent = data.name || doc.id;
 
           btn.onclick = () => {
@@ -250,7 +511,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // stable-ish userId per request
       const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
       try {
@@ -335,7 +595,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = data.status || (data.approved ? "approved" : "pending");
 
       if (status === "approved") {
-        loadChat(name, classId, userId);
+        // NEW: Rules gate before chat
+        showRulesGate(
+          {
+            classId,
+            userId,
+            userName: name,
+            className: selectedClassName || data.className || classId,
+          },
+          () => loadChat(name, classId, userId)
+        );
       } else if (status === "rejected") {
         showDenied("You were rejected by the admin.");
       } else if (status === "banned") {
@@ -363,7 +632,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = data.status || (data.approved ? "approved" : "pending");
 
       if (status === "approved") {
-        loadChat(name, classId, userId);
+        // NEW: Rules gate before chat
+        showRulesGate(
+          {
+            classId,
+            userId,
+            userName: name,
+            className: selectedClassName || data.className || classId,
+          },
+          () => loadChat(name, classId, userId)
+        );
       } else if (status === "rejected") {
         showDenied("You were rejected by the admin.");
       } else if (status === "banned") {
@@ -481,7 +759,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = msgInput.value.trim();
         if (!text) return;
 
-        // hard block if banned/rejected mid-session
         const banDoc = await bannedRef(classId, userId).get();
         if (banDoc.exists) {
           if (chatStatus) {
