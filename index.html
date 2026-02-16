@@ -5,12 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SecureText</title>
 
+  <link rel="stylesheet" href="style.css" />
+
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
   <style>
+    /* =========================
+       BASE + NO OUTER SCROLL
+       ========================= */
     html, body { height: 100%; margin: 0; }
     body{
       background:
@@ -19,32 +24,24 @@
         radial-gradient(900px 700px at 50% 85%, rgba(255,255,255,.06), transparent 60%),
         #070a0f;
       color: rgba(255,255,255,.92);
-      overflow: hidden;
+      overflow: hidden; /* KEY: prevent page scrollbar */
       font-family: Arial, sans-serif;
     }
 
+    /* FULLSCREEN ROOT (no padding = true stretch) */
     #root{
       position: relative;
       height: 100vh;
       width: 100%;
-      padding: 0;
+      padding: 0;              /* KEY: remove boxing */
       box-sizing: border-box;
       overflow: hidden;
     }
 
-    :root{
-      --glass: rgba(18,18,18,.55);
-      --glass2: rgba(18,18,18,.35);
-      --border: rgba(255,255,255,.08);
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.65);
-      --accent: rgba(68, 255, 160, .9);
-      --danger: rgba(255, 90, 90, .95);
-      --warn: rgba(255, 211, 107, .95);
-      --shadow: 0 24px 70px rgba(0,0,0,.55);
-    }
-
-    /* Admin path button (ONLY class screen via JS toggle) */
+    /* =========================
+       ADMIN PATH BUTTON
+       (NOW ONLY EXISTS IN CLASS SCREEN HTML)
+       ========================= */
     .admin-path-btn{
       position:absolute;
       top: 15px;
@@ -59,12 +56,13 @@
       z-index: 50;
       border-radius: 12px;
       backdrop-filter: blur(10px);
-      display:none; /* default hidden, app.js will show on class screen */
     }
     .admin-path-btn:hover{ background: rgba(0,0,0,.5); transform: translateY(-1px); }
     .admin-path-btn:active{ transform: translateY(0); opacity: .95; }
 
-    /* Screen visibility */
+    /* =========================
+       SCREEN VISIBILITY
+       ========================= */
     .screen{ display:none; opacity:0; transform: translateY(10px); }
     .screen.active{
       display:block;
@@ -73,8 +71,22 @@
       transition: opacity .22s ease, transform .22s ease;
     }
 
-    /* Entry screens */
-    #screen-class, #screen-pin, #screen-name, #screen-wait, #screen-rules{
+    /* =========================
+       MODERN ENTRY UI
+       ========================= */
+    :root{
+      --glass: rgba(18,18,18,.55);
+      --glass2: rgba(18,18,18,.35);
+      --border: rgba(255,255,255,.08);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.65);
+      --accent: rgba(68, 255, 160, .9);
+      --danger: rgba(255, 90, 90, .95);
+      --warn: rgba(255, 211, 107, .95);
+      --shadow: 0 24px 70px rgba(0,0,0,.55);
+    }
+
+    #screen-class, #screen-pin, #screen-name, #screen-wait{
       height: 100%;
       display:grid;
       place-items:center;
@@ -161,10 +173,6 @@
       background: rgba(60,255,160,.14);
       border-color: rgba(60,255,160,.28);
     }
-    .btn.danger{
-      background: rgba(255,90,90,.14);
-      border-color: rgba(255,90,90,.28);
-    }
     .btn.ghost{ background: transparent; }
 
     .entry-form{ position:relative; z-index:1; margin-top:18px; display:grid; gap:12px; }
@@ -203,7 +211,6 @@
       cursor:pointer;
       transition: transform .14s ease, background .14s ease, border-color .14s ease;
       animation: tileIn .28s ease;
-      text-align:left;
     }
     @keyframes tileIn{
       from{ opacity:0; transform: translateY(8px); }
@@ -226,8 +233,12 @@
       .classes-wrap{ grid-template-columns: 1fr; }
     }
 
-    /* Fullscreen chat */
+    /* =========================
+       FULLSCREEN CHAT (stretched)
+       ========================= */
     #screen-chat{ height: 100%; overflow:hidden; }
+
+    /* IMPORTANT: full width, no max-width, no margin */
     #chat-screen{
       height: 100%;
       width: 100%;
@@ -236,33 +247,21 @@
       display:flex;
       flex-direction: column;
       overflow:hidden;
-      border-radius: 0;
+      border-radius: 0; /* fullscreen edge-to-edge */
     }
 
-    .chat-header{
-      width: 100%;
-      padding: 15px 20px;
-      display:flex;
-      justify-content: space-between;
-      align-items:center;
-      border-bottom: 1px solid rgba(255,255,255,0.12);
-      background: rgba(0,0,0,0.15);
-      backdrop-filter: blur(10px);
-      flex: 0 0 auto;
+    /* Messages is the ONLY scroll area */
+    #messages.messages{
+      flex: 1 1 auto;
+      min-height: 0;      /* KEY for flex scrolling */
+      overflow-y:auto;
+      margin: 10px 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.12);
+      border: 1px solid rgba(255,255,255,0.06);
+      scroll-behavior: smooth;
     }
-    .chat-header h1{ margin:0; font-size: 1.35rem; }
-    .subtitle{ margin:0; font-size: .9rem; opacity:.7; }
-    .chat-controls button{
-      margin-left: 10px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.06);
-      color: #fff;
-      cursor:pointer;
-      transition:.15s;
-    }
-    .chat-controls button:hover{ transform: translateY(-1px); filter: brightness(1.05); }
 
     #announcementsBox{
       flex: 0 0 auto;
@@ -276,18 +275,6 @@
       max-height: 90px;
       overflow-y:auto;
       margin-top: 8px;
-    }
-
-    #messages.messages{
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y:auto;
-      margin: 10px 14px;
-      padding: 12px;
-      border-radius: 12px;
-      background: rgba(0,0,0,0.12);
-      border: 1px solid rgba(255,255,255,0.06);
-      scroll-behavior: smooth;
     }
 
     #typingIndicator{
@@ -307,108 +294,23 @@
       background: rgba(0,0,0,0.35);
       border-top: 1px solid rgba(255,255,255,0.06);
     }
-    #msgInput{ flex:1; min-width:0; padding: 12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.10); background: rgba(0,0,0,.30); color:#fff; outline:none; }
-    #sendBtn{ padding: 11px 16px; border-radius:12px; border:1px solid rgba(255,255,255,.10); background: rgba(60,255,160,.14); color:#fff; cursor:pointer; }
+    #msgInput{ flex:1; min-width:0; padding: 12px 14px; border-radius:12px; }
+    #sendBtn{ padding: 11px 16px; border-radius:12px; }
 
+    /* Message pop animation */
     .msg, .reply-msg{
       animation: msgIn 160ms ease;
       transform-origin: bottom;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 12px;
-      padding: 10px 12px;
-      margin-bottom: 10px;
-      max-width: 85%;
     }
-    .msg.own, .reply-msg.own{
-      margin-left: auto;
-      background: rgba(60,255,160,0.10);
-      border-color: rgba(60,255,160,0.14);
-    }
-    .msg-top{ display:flex; justify-content:space-between; gap:10px; font-size: 0.85rem; opacity:.85; margin-bottom: 6px; }
-    .msg-text{ line-height: 1.35rem; }
-    .msg-actions{ margin-top: 8px; display:flex; gap:8px; flex-wrap:wrap; }
-    .msg-actions button{
-      padding: 6px 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.06);
-      color:#fff;
-      cursor:pointer;
-      font-size: 12px;
-    }
-
     @keyframes msgIn{
       from{ opacity:0; transform: translateY(6px) scale(.995); }
       to{ opacity:1; transform: translateY(0) scale(1); }
     }
 
-    /* Replies */
-    .replies{
-      width: 100%;
-      padding: 12px 15px;
-      max-height: 40vh;
-      overflow-y: auto;
-      background: rgba(0,0,0,0.15);
-      border-top: 1px solid rgba(255,255,255,0.2);
-    }
-    .replies.hidden{ display:none; }
-    .replies-header{
-      display:flex;
-      justify-content: space-between;
-      align-items:center;
-      margin-bottom: 10px;
-    }
-    .reply-input{ display:flex; gap:8px; }
-    .reply-input input{
-      flex:1;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.30);
-      color:#fff;
-      outline:none;
-    }
-    .reply-input button{
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.06);
-      color:#fff;
-      cursor:pointer;
-    }
-
-    /* Rules modal screen */
-    .rules-box{
-      position:relative;
-      z-index:1;
-      margin-top: 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.25);
-      padding: 14px 14px;
-    }
-    .rules-list{
-      margin: 10px 0 0 18px;
-      color: rgba(255,255,255,.85);
-      line-height: 1.55rem;
-    }
-    .rules-ack{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid rgba(255,255,255,.10);
-    }
-    .rules-ack input{ width: 18px; height: 18px; }
-    .rules-timer{
-      margin-top: 10px;
-      font-size: 12px;
-      opacity:.8;
-    }
-
-    /* Intro overlay */
+    /* =========================
+       INTRO OVERLAY + CONFETTI
+       FIXED: cannot block anything once hidden
+       ========================= */
     .intro-overlay{
       position: fixed;
       inset: 0;
@@ -426,10 +328,11 @@
     }
     .intro-overlay.hidden{
       opacity: 0;
-      pointer-events: none;
-      visibility: hidden;
+      pointer-events: none;     /* KEY */
+      visibility: hidden;       /* KEY */
       transform: translateY(-8px);
     }
+
     .intro-card{
       width: min(560px, 92vw);
       border-radius: 18px;
@@ -458,6 +361,7 @@
       opacity:.8;
     }
     @keyframes introSpin{ to{ transform: rotate(360deg); } }
+
     .intro-logo{ position:relative; z-index:2; display:flex; align-items:center; gap:12px; }
     .intro-badge{
       width: 46px; height: 46px;
@@ -472,6 +376,7 @@
     .intro-badge span{ font-weight: 900; letter-spacing:.6px; opacity:.95; }
     .intro-name{ font-size: 22px; font-weight: 900; letter-spacing:.4px; }
     .intro-tag{ margin-top:4px; font-size: 12px; opacity:.72; }
+
     .intro-bar{
       position:relative;
       z-index:2;
@@ -505,14 +410,17 @@
       transition: opacity .2s ease;
     }
     .confetti-canvas.on{ opacity:1; }
+
+    .welcome-glow{ animation: welcomeGlow 650ms ease; }
+    @keyframes welcomeGlow{
+      from{ text-shadow:0 0 0 rgba(60,255,160,0); transform: translateY(6px); opacity:0; }
+      to{ text-shadow:0 0 22px rgba(60,255,160,.10); transform: translateY(0); opacity:1; }
+    }
   </style>
 </head>
 
 <body>
   <div id="root">
-    <button id="adminPathBtn" class="admin-path-btn" onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
-      ADMIN PATH
-    </button>
 
     <!-- INTRO OVERLAY -->
     <div id="introOverlay" class="intro-overlay">
@@ -533,6 +441,13 @@
 
     <!-- CLASS SELECT -->
     <div id="screen-class" class="screen active">
+
+      <!-- ADMIN PATH BUTTON (ONLY HERE NOW) -->
+      <button class="admin-path-btn"
+        onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
+        ADMIN PATH
+      </button>
+
       <div class="entry-card">
         <div class="entry-top">
           <div class="brand">
@@ -620,44 +535,6 @@
       </div>
     </div>
 
-    <!-- RULES (after approval) -->
-    <div id="screen-rules" class="screen">
-      <div class="entry-card">
-        <div class="entry-top">
-          <div class="brand">
-            <div class="brand-badge"><span>ST</span></div>
-            <div>
-              <h1 class="entry-title">Rules</h1>
-              <p class="entry-sub">Read carefully. You must accept to enter chat.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="rules-box">
-          <strong style="display:block; margin-bottom:6px;">Serious rules</strong>
-          <ul class="rules-list">
-            <li>Don’t curse at other people.</li>
-            <li>No racial slurs, hate speech, or harassment.</li>
-            <li>No doxxing or sharing private info.</li>
-            <li>Follow the class rules. Admin decisions are final.</li>
-          </ul>
-
-          <div class="rules-ack">
-            <input id="rulesCheck" type="checkbox" disabled />
-            <div>
-              <div style="font-weight:800;">I understand and will follow the rules.</div>
-              <div class="rules-timer" id="rulesTimer">Please wait…</div>
-            </div>
-          </div>
-
-          <button id="rulesContinueBtn" class="btn primary" style="margin-top:14px;" disabled>
-            Enter Chat
-          </button>
-          <p id="rulesError" class="notice bad"></p>
-        </div>
-      </div>
-    </div>
-
     <!-- CHAT -->
     <div id="screen-chat" class="screen">
       <div id="chat-screen" class="night">
@@ -678,6 +555,7 @@
         </div>
 
         <div id="messages" class="messages"></div>
+
         <div id="typingIndicator"></div>
 
         <div id="replies-panel" class="replies hidden">
@@ -706,6 +584,7 @@
   <script src="firebase.js"></script>
   <script src="app.js"></script>
 
+  <!-- SAFE INTRO/CONFETTI HELPERS (does NOT touch your app.js) -->
   <script>
     (function(){
       const overlay = document.getElementById("introOverlay");
@@ -713,20 +592,26 @@
       const canvas = document.getElementById("confettiCanvas");
 
       function setHint(t){ if (hint) hint.textContent = t; }
+
       function hardRemoveOverlay(){
         if (!overlay) return;
         overlay.classList.add("hidden");
+        // remove for real so it can NEVER block clicks
         setTimeout(() => {
           try { overlay.parentNode && overlay.parentNode.removeChild(overlay); } catch {}
         }, 250);
       }
 
+      // remove once page is ready
       window.addEventListener("load", () => {
         setHint("Ready");
         setTimeout(hardRemoveOverlay, 650);
       });
+
+      // ALSO remove on first user interaction (extra safety)
       window.addEventListener("pointerdown", hardRemoveOverlay, { once: true });
 
+      // Expose optional helpers (your app.js can call these if you want later)
       window.ST_UI = {
         setHint,
         hideIntro: hardRemoveOverlay,
@@ -739,7 +624,7 @@
           const colors = ["rgba(60,255,160,.95)","rgba(80,140,255,.95)","rgba(255,255,255,.90)","rgba(255,211,107,.95)"];
           const rand = (a,b)=>a+Math.random()*(b-a);
           const pieces = [];
-          const count = Math.min(170, Math.floor(innerWidth/8));
+          const count = Math.min(160, Math.floor(innerWidth/8));
 
           for (let i=0;i<count;i++){
             pieces.push({
