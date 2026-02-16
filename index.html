@@ -1,29 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SecureText</title>
-<link rel="stylesheet" href="style.css">
-<style>
-body{font-family:sans-serif;padding:20px;}
-input,select,button{margin:5px 0;padding:5px;width:200px;}
-#errorMsg{color:red;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureText</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; }
+        input { padding: 8px; margin: 5px; border-radius: 4px; border: 1px solid #333; }
+        button { padding: 8px 12px; border-radius: 4px; background: #222; color: #fff; border: 1px solid #333; cursor: pointer; }
+        button:hover { background: #333; }
+        .class-btn { display: block; margin: 10px auto; width: 200px; }
+        #chat-screen { display: none; margin-top: 20px; }
+        #messages { max-height: 300px; overflow-y: auto; border: 1px solid #333; padding: 10px; margin: 10px auto; width: 90%; }
+        .msg { margin-bottom: 10px; }
+        .own { color: #4af; }
+        #typingIndicator { font-style: italic; margin: 5px; }
+    </style>
 </head>
 <body>
-<h1>SecureText</h1>
-<p>Select your class and enter PIN:</p>
 
-<select id="classSelect">
-  <option value="">-- Choose Class --</option>
-</select>
-<input id="pinInput" type="password" placeholder="Class PIN">
-<input id="nameInput" type="text" placeholder="Your Name">
-<button id="continueBtn">Continue</button>
-<p id="errorMsg"></p>
+    <div id="class-screen">
+        <h1>SecureText</h1>
+        <p>Select your class:</p>
+        <div id="classes"></div>
+        <p id="classError" style="color:red;"></p>
+    </div>
 
-<script src="firebase.js"></script>
-<script src="app.js"></script>
+    <div id="pin-screen" style="display:none;">
+        <h2>Enter PIN for <span id="selectedClassName"></span></h2>
+        <input type="text" id="pinInput" placeholder="Class PIN">
+        <button id="pinBtn">Submit PIN</button>
+        <p id="pinError" style="color:red;"></p>
+    </div>
+
+    <div id="name-screen" style="display:none;">
+        <h2>Enter your name</h2>
+        <input id="nameInput" type="text" placeholder="Your name">
+        <button id="continueBtn">Continue</button>
+        <p id="errorMsg" style="color:red;"></p>
+    </div>
+
+    <div id="waiting-screen" style="display:none;">
+        <h2>Please wait for admin approval</h2>
+        <p id="waitingName"></p>
+    </div>
+
+    <div id="chat-screen" class="night">
+        <h2>SecureText Chat - <span id="chatClassName"></span></h2>
+        <div id="messages"></div>
+        <div id="typingIndicator"></div>
+        <input id="msgInput" type="text" placeholder="Type a message">
+        <button id="sendBtn">Send</button>
+        <button id="logoutBtn">Logout</button>
+    </div>
+
+    <script src="firebase.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
