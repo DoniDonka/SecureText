@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ===== helpers =====
   const $ = (id) => document.getElementById(id);
 
+  // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
     pin: $("screen-pin"),
@@ -10,17 +11,48 @@ document.addEventListener("DOMContentLoaded", () => {
     chat: $("screen-chat"),
   };
 
+  // Extra legacy full-screen nodes that might still exist (from older versions / CSS)
+  const legacyFullScreens = ["name-screen", "waiting-screen", "chat-screen"];
+
+  function hardHideEl(el) {
+    if (!el) return;
+    el.classList.remove("active");
+    el.style.display = "none";
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+    el.style.visibility = "hidden";
+  }
+
+  function hardShowEl(el) {
+    if (!el) return;
+    el.classList.add("active");
+    el.style.display = "block";
+    el.style.opacity = "1";
+    el.style.pointerEvents = "auto";
+    el.style.visibility = "visible";
+  }
+
+  // IMPORTANT: Always ensure only ONE main screen can exist/click at once
   function showScreen(key) {
-    Object.values(screens).forEach((el) => el.classList.remove("active"));
-    screens[key].classList.add("active");
+    // Hide all known screens
+    Object.values(screens).forEach((el) => hardHideEl(el));
+
+    // Also hide any old full-screen elements that can overlay and block clicks
+    legacyFullScreens.forEach((id) => {
+      const el = $(id);
+      // Do NOT hide the inner chat container when chat screen is active
+      // (chat container is inside screen-chat)
+      if (id === "chat-screen") return;
+      if (el) hardHideEl(el);
+    });
+
+    // Show the target screen
+    hardShowEl(screens[key]);
   }
 
   function escapeHtml(str) {
     if (!str) return "";
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   function setLS(obj) {
@@ -71,7 +103,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (savedClassId && savedUserId && savedUserName) {
     selectedClassId = savedClassId;
     selectedClassName = savedClassName || savedClassId;
-    // decide where to go based on status
     restoreFlow(savedClassId, savedUserId, savedUserName);
   } else {
     loadClasses();
@@ -79,41 +110,55 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===== UI events =====
-  $("pinBackBtn").onclick = () => {
-    $("pinInput").value = "";
-    $("pinError").textContent = "";
-    showScreen("class");
-  };
+  const pinBackBtn = $("pinBackBtn");
+  if (pinBackBtn) {
+    pinBackBtn.onclick = () => {
+      $("pinInput").value = "";
+      $("pinError").textContent = "";
+      showScreen("class");
+    };
+  }
 
-  $("nameBackBtn").onclick = () => {
-    $("nameInput").value = "";
-    $("nameError").textContent = "";
-    showScreen("pin");
-  };
+  const nameBackBtn = $("nameBackBtn");
+  if (nameBackBtn) {
+    nameBackBtn.onclick = () => {
+      $("nameInput").value = "";
+      $("nameError").textContent = "";
+      showScreen("pin");
+    };
+  }
 
-  $("resetBtn").onclick = () => {
-    clearLS();
-    location.reload();
-  };
+  const resetBtn = $("resetBtn");
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      clearLS();
+      location.reload();
+    };
+  }
 
-  $("logoutBtn").onclick = () => {
-    clearLS();
-    location.reload();
-  };
+  const logoutBtn = $("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.onclick = () => {
+      clearLS();
+      location.reload();
+    };
+  }
 
   // ===== 1) Load classes dynamically =====
   function loadClasses() {
     const classesWrap = $("classes");
     const err = $("classError");
+    if (!classesWrap) return;
+
     classesWrap.innerHTML = "Loading classes...";
-    err.textContent = "";
+    if (err) err.textContent = "";
 
     db.collection("classes")
       .get()
       .then((snap) => {
         classesWrap.innerHTML = "";
         if (snap.empty) {
-          err.textContent = "No classes found in Firestore (collection must be named 'classes').";
+          if (err) err.textContent = "No classes found in Firestore (collection must be named 'classes').";
           return;
         }
 
@@ -121,119 +166,142 @@ document.addEventListener("DOMContentLoaded", () => {
           const data = doc.data() || {};
           const btn = document.createElement("button");
           btn.className = "class-btn";
+          btn.type = "button";
           btn.textContent = data.name || doc.id;
+
           btn.onclick = () => {
             selectedClassId = doc.id;
             selectedClassName = data.name || doc.id;
-            $("pinClassName").textContent = selectedClassName;
+
+            const pinClassName = $("pinClassName");
+            if (pinClassName) pinClassName.textContent = selectedClassName;
+
             $("pinError").textContent = "";
             $("pinInput").value = "";
             showScreen("pin");
           };
+
           classesWrap.appendChild(btn);
         });
       })
       .catch((e) => {
-        err.textContent = "Failed to load classes. Check Firestore rules + config.";
+        if (err) err.textContent = "Failed to load classes. Check Firestore rules + config.";
         console.error(e);
       });
   }
 
   // ===== 2) PIN verify =====
-  $("pinContinueBtn").onclick = async () => {
-    const pin = $("pinInput").value.trim();
-    if (!selectedClassId) {
-      $("pinError").textContent = "No class selected.";
-      return;
-    }
-    if (!pin) {
-      $("pinError").textContent = "Enter a PIN.";
-      return;
-    }
-
-    try {
-      const clsDoc = await classDocRef(selectedClassId).get();
-      if (!clsDoc.exists) {
-        $("pinError").textContent = "Class not found.";
+  const pinContinueBtn = $("pinContinueBtn");
+  if (pinContinueBtn) {
+    pinContinueBtn.onclick = async () => {
+      const pin = $("pinInput").value.trim();
+      if (!selectedClassId) {
+        $("pinError").textContent = "No class selected.";
         return;
       }
-      const data = clsDoc.data() || {};
-      if (String(data.pin || "") !== pin) {
-        $("pinError").textContent = "Wrong PIN!";
+      if (!pin) {
+        $("pinError").textContent = "Enter a PIN.";
         return;
       }
 
-      $("pinError").textContent = "";
-      $("nameError").textContent = "";
-      $("nameInput").value = "";
-      showScreen("name");
-    } catch (e) {
-      console.error(e);
-      $("pinError").textContent = "PIN check failed. Check Firestore rules.";
-    }
-  };
+      try {
+        const clsDoc = await classDocRef(selectedClassId).get();
+        if (!clsDoc.exists) {
+          $("pinError").textContent = "Class not found.";
+          return;
+        }
+        const data = clsDoc.data() || {};
+        if (String(data.pin || "") !== pin) {
+          $("pinError").textContent = "Wrong PIN!";
+          return;
+        }
+
+        $("pinError").textContent = "";
+        $("nameError").textContent = "";
+        $("nameInput").value = "";
+        showScreen("name");
+      } catch (e) {
+        console.error(e);
+        $("pinError").textContent = "PIN check failed. Check Firestore rules.";
+      }
+    };
+  }
 
   // ===== 3) Create pending user =====
-  $("nameContinueBtn").onclick = async () => {
-    const name = $("nameInput").value.trim();
-    if (!selectedClassId) {
-      $("nameError").textContent = "No class selected.";
-      return;
-    }
-    if (!name) {
-      $("nameError").textContent = "Enter a name.";
-      return;
-    }
-
-    // create a stable userId for this device
-    const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-    try {
-      // if already banned for this userId (shouldn't happen first time), block
-      const bannedDoc = await bannedRef(selectedClassId, userId).get();
-      if (bannedDoc.exists) {
-        showDenied("You are banned from this class.");
+  const nameContinueBtn = $("nameContinueBtn");
+  if (nameContinueBtn) {
+    nameContinueBtn.onclick = async () => {
+      const name = $("nameInput").value.trim();
+      if (!selectedClassId) {
+        $("nameError").textContent = "No class selected.";
+        return;
+      }
+      if (!name) {
+        $("nameError").textContent = "Enter a name.";
         return;
       }
 
-      await pendingRef(selectedClassId, userId).set({
-        name,
-        userId,
-        classId: selectedClassId,
-        className: selectedClassName || selectedClassId,
-        status: "pending",          // pending | approved | rejected | banned
-        approved: false,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      // stable-ish userId per request
+      const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-      setLS({
-        classId: selectedClassId,
-        className: selectedClassName || selectedClassId,
-        userId,
-        userName: name,
-      });
+      try {
+        const bannedDoc = await bannedRef(selectedClassId, userId).get();
+        if (bannedDoc.exists) {
+          showDenied("You are banned from this class.");
+          return;
+        }
 
-      showWaiting(name, selectedClassId);
-      watchStatus(selectedClassId, userId, name);
-    } catch (e) {
-      console.error(e);
-      $("nameError").textContent = "Failed to submit. Check Firestore rules.";
-    }
-  };
+        await pendingRef(selectedClassId, userId).set({
+          name,
+          userId,
+          classId: selectedClassId,
+          className: selectedClassName || selectedClassId,
+          status: "pending",
+          approved: false,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+
+        setLS({
+          classId: selectedClassId,
+          className: selectedClassName || selectedClassId,
+          userId,
+          userName: name,
+        });
+
+        showWaiting(name, selectedClassId);
+        watchStatus(selectedClassId, userId, name);
+      } catch (e) {
+        console.error(e);
+        $("nameError").textContent = "Failed to submit. Check Firestore rules.";
+      }
+    };
+  }
 
   // ===== waiting screen =====
   function showWaiting(name, classId) {
-    $("waitText").textContent = `${name}, you requested access to ${selectedClassName || classId}.`;
-    $("waitStatus").textContent = "";
-    $("waitStatus").className = "notice";
+    const waitText = $("waitText");
+    const waitStatus = $("waitStatus");
+
+    if (waitText) waitText.textContent = `${name}, you requested access to ${selectedClassName || classId}.`;
+    if (waitStatus) {
+      waitStatus.textContent = "";
+      waitStatus.className = "notice";
+    }
+
     showScreen("wait");
   }
 
   function showDenied(msg) {
-    $("waitText").textContent = "Access blocked.";
-    $("waitStatus").textContent = msg;
-    $("waitStatus").className = "notice bad";
+    const waitText = $("waitText");
+    const waitStatus = $("waitStatus");
+
+    if (waitText) waitText.textContent = "Access blocked.";
+    if (waitStatus) {
+      waitStatus.textContent = msg;
+      waitStatus.className = "notice bad";
+    }
+
     showScreen("wait");
   }
 
@@ -248,7 +316,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const pDoc = await pendingRef(classId, userId).get();
       if (!pDoc.exists) {
-        // stale local storage
         clearLS();
         loadClasses();
         showScreen("class");
@@ -270,7 +337,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       console.error(e);
-      // fallback
       showWaiting(name, classId);
       watchStatus(classId, userId, name);
     }
@@ -280,7 +346,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function watchStatus(classId, userId, name) {
     pendingRef(classId, userId).onSnapshot((doc) => {
       if (!doc.exists) {
-        // admin deleted, treat as rejected
         showDenied("Your request was removed (denied).");
         return;
       }
@@ -295,16 +360,16 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (status === "banned") {
         showDenied("You are banned from this class.");
       } else {
-        $("waitStatus").textContent = "Pending approval...";
-        $("waitStatus").className = "notice warn";
+        const waitStatus = $("waitStatus");
+        if (waitStatus) {
+          waitStatus.textContent = "Pending approval...";
+          waitStatus.className = "notice warn";
+        }
       }
     });
 
-    // also watch ban doc (in case ban happens later)
     bannedRef(classId, userId).onSnapshot((doc) => {
-      if (doc.exists) {
-        showDenied("You are banned from this class.");
-      }
+      if (doc.exists) showDenied("You are banned from this class.");
     });
   }
 
@@ -320,9 +385,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function loadChat(name, classId, userId) {
     clearChatListeners();
 
-    $("chatWelcome").textContent = `Welcome, ${name}!`;
-    $("chatSubtitle").textContent = `SecureText chat | ${selectedClassName || classId}`;
-    $("chatStatus").textContent = "";
+    const chatWelcome = $("chatWelcome");
+    const chatSubtitle = $("chatSubtitle");
+    const chatStatus = $("chatStatus");
+
+    if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
+    if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
+    if (chatStatus) chatStatus.textContent = "";
+
     showScreen("chat");
 
     const msgInput = $("msgInput");
@@ -332,19 +402,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const themeToggle = $("themeToggle");
 
     // theme toggle
-    themeToggle.onclick = () => {
-      const screen = $("chat-screen");
-      const isDay = screen.classList.contains("day");
-      if (isDay) {
-        screen.classList.remove("day");
-        screen.classList.add("night");
-        themeToggle.textContent = "🌙";
-      } else {
-        screen.classList.remove("night");
-        screen.classList.add("day");
-        themeToggle.textContent = "☀️";
-      }
-    };
+    if (themeToggle) {
+      themeToggle.onclick = () => {
+        const screen = $("chat-screen");
+        if (!screen) return;
+        const isDay = screen.classList.contains("day");
+        if (isDay) {
+          screen.classList.remove("day");
+          screen.classList.add("night");
+          themeToggle.textContent = "🌙";
+        } else {
+          screen.classList.remove("night");
+          screen.classList.add("day");
+          themeToggle.textContent = "☀️";
+        }
+      };
+    }
 
     // announcements (per-class)
     chatUnsubs.push(
@@ -352,10 +425,14 @@ document.addEventListener("DOMContentLoaded", () => {
         .orderBy("timestamp", "asc")
         .onSnapshot((snap) => {
           const box = $("announcementsList");
+          if (!box) return;
           box.innerHTML = "";
           snap.forEach((doc) => {
             const a = doc.data() || {};
-            const t = a.timestamp && a.timestamp.toDate ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+            const t =
+              a.timestamp && a.timestamp.toDate
+                ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "";
             const div = document.createElement("div");
             div.innerHTML = `<div style="margin:6px 0;"><strong>[${t}]</strong> ${escapeHtml(a.text || "")}</div>`;
             box.appendChild(div);
@@ -366,16 +443,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // typing indicator (per-class)
     let typingTimeout = null;
-    msgInput.addEventListener("input", () => {
-      typingDoc(classId).set({ [userId]: true }, { merge: true });
-      if (typingTimeout) clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      }, 1500);
-    });
+    if (msgInput) {
+      msgInput.addEventListener("input", () => {
+        typingDoc(classId).set({ [userId]: true }, { merge: true });
+        if (typingTimeout) clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+          typingDoc(classId).set({ [userId]: false }, { merge: true });
+        }, 1500);
+      });
+    }
 
     chatUnsubs.push(
       typingDoc(classId).onSnapshot((doc) => {
+        if (!typingDiv) return;
         if (!doc.exists) {
           typingDiv.textContent = "";
           return;
@@ -387,43 +467,50 @@ document.addEventListener("DOMContentLoaded", () => {
     );
 
     // send message (MAIN)
-    sendBtn.onclick = async () => {
-      const text = msgInput.value.trim();
-      if (!text) return;
+    if (sendBtn && msgInput) {
+      sendBtn.onclick = async () => {
+        const text = msgInput.value.trim();
+        if (!text) return;
 
-      // hard block if banned/rejected mid-session
-      const banDoc = await bannedRef(classId, userId).get();
-      if (banDoc.exists) {
-        $("chatStatus").textContent = "You are banned.";
-        $("chatStatus").className = "notice bad";
-        return;
-      }
-      const pDoc = await pendingRef(classId, userId).get();
-      const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-      if (st !== "approved") {
-        $("chatStatus").textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
-        $("chatStatus").className = "notice bad";
-        return;
-      }
+        // hard block if banned/rejected mid-session
+        const banDoc = await bannedRef(classId, userId).get();
+        if (banDoc.exists) {
+          if (chatStatus) {
+            chatStatus.textContent = "You are banned.";
+            chatStatus.className = "notice bad";
+          }
+          return;
+        }
 
-      // write message
-      await messagesCol(classId).add({
-        name,
-        userId,
-        text,
-        replyTo: null,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+        const pDoc = await pendingRef(classId, userId).get();
+        const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
+        if (st !== "approved") {
+          if (chatStatus) {
+            chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
+            chatStatus.className = "notice bad";
+          }
+          return;
+        }
 
-      msgInput.value = "";
-      typingDoc(classId).set({ [userId]: false }, { merge: true });
-    };
+        await messagesCol(classId).add({
+          name,
+          userId,
+          text,
+          replyTo: null,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+
+        msgInput.value = "";
+        typingDoc(classId).set({ [userId]: false }, { merge: true });
+      };
+    }
 
     // live messages (MAIN)
     chatUnsubs.push(
       messagesCol(classId)
         .orderBy("timestamp", "asc")
         .onSnapshot((snap) => {
+          if (!messagesDiv) return;
           messagesDiv.innerHTML = "";
           snap.forEach((doc) => {
             const m = doc.data() || {};
@@ -454,8 +541,6 @@ document.addEventListener("DOMContentLoaded", () => {
           messagesDiv.scrollTop = messagesDiv.scrollHeight;
         })
     );
-
-    // replies panel open/close + send + delete are handled by global click
   }
 
   // ===== Replies panel (per-class) =====
@@ -470,13 +555,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const sendReplyBtn = $("sendReplyBtn");
     const replyInput = $("replyMsgInput");
 
+    if (!panel) return;
+
     panel.classList.remove("hidden");
     title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
 
-    // live replies for that parent (no where needed; filter in JS)
     const unsub = messagesCol(classId)
       .orderBy("timestamp", "asc")
       .onSnapshot((snap) => {
+        if (!list) return;
         list.innerHTML = "";
         snap.forEach((doc) => {
           const m = doc.data() || {};
@@ -505,34 +592,33 @@ document.addEventListener("DOMContentLoaded", () => {
         list.scrollTop = list.scrollHeight;
       });
 
-    // replace handler safely each time
-    sendReplyBtn.onclick = async () => {
-      const text = replyInput.value.trim();
-      if (!text) return;
+    if (sendReplyBtn) {
+      sendReplyBtn.onclick = async () => {
+        const text = replyInput.value.trim();
+        if (!text) return;
 
-      // must still be approved
-      const pDoc = await pendingRef(classId, userId).get();
-      const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-      if (st !== "approved") return;
+        const pDoc = await pendingRef(classId, userId).get();
+        const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
+        if (st !== "approved") return;
 
-      await messagesCol(classId).add({
-        name,
-        userId,
-        text,
-        replyTo: parentId,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+        await messagesCol(classId).add({
+          name,
+          userId,
+          text,
+          replyTo: parentId,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
 
-      replyInput.value = "";
-    };
+        replyInput.value = "";
+      };
+    }
 
-    // stop this listener when panel closes
-    panel.dataset.unsub = "1";
     panel._unsubReplies = unsub;
   }
 
   function closeReplies() {
     const panel = $("replies-panel");
+    if (!panel) return;
     panel.classList.add("hidden");
     if (panel._unsubReplies) {
       try { panel._unsubReplies(); } catch {}
@@ -545,7 +631,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const classId = localStorage.getItem("classId");
     await messagesCol(classId).doc(messageId).delete();
 
-    // delete replies if deleting a main message
     if (parentId === "null") {
       const snap = await messagesCol(classId).get();
       const batch = db.batch();
@@ -561,15 +646,15 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", (e) => {
     const t = e.target;
 
-    if (t.id === "closeReplies") closeReplies();
+    if (t && t.id === "closeReplies") closeReplies();
 
-    if (t.classList && (t.classList.contains("reply-btn") || t.classList.contains("view-replies-btn"))) {
+    if (t && t.classList && (t.classList.contains("reply-btn") || t.classList.contains("view-replies-btn"))) {
       const parentId = t.dataset.id;
       const parentText = t.dataset.text || "";
       openReplies(parentId, parentText);
     }
 
-    if (t.classList && t.classList.contains("delete-btn")) {
+    if (t && t.classList && t.classList.contains("delete-btn")) {
       const id = t.dataset.id;
       const parent = t.dataset.parent;
       deleteMessage(id, parent);
