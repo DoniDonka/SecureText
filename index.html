@@ -1,60 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureText</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureText</title>
+<link rel="stylesheet" href="style.css">
 
-    <link rel="stylesheet" href="style.css">
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
-    <style>
-        /* ADMIN PATH BUTTON */
-        .admin-path-btn {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            padding: 6px 14px;
-            background-color: #111;
-            color: white;
-            border: 1px solid #333;
-            font-size: 13px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-
-        .admin-path-btn:hover {
-            background-color: #222;
-        }
-
-        #name-screen {
-            position: relative;
-        }
-    </style>
+<style>
+body { font-family: sans-serif; text-align:center; padding:50px; }
+input { padding:6px; margin:5px; width:200px; }
+button { padding:6px 12px; margin:5px; cursor:pointer; }
+#errorMsg { color:red; margin-top:10px; }
+</style>
 </head>
-
 <body>
-    <div id="name-screen">
-        <!-- ADMIN PATH BUTTON -->
-        <button class="admin-path-btn"
-            onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
-            ADMIN PATH
-        </button>
+<h1>SecureText</h1>
 
-        <h1>SecureText</h1>
-        <p>Enter your name to continue.</p>
+<div id="class-screen">
+    <p>Select your class:</p>
+    <select id="classSelect">
+        <option value="">-- Select Class --</option>
+    </select>
+    <br>
+    <input id="pinInput" type="password" placeholder="Enter PIN">
+    <br>
+    <button id="classContinueBtn">Continue</button>
+    <p id="classError" style="color:red;"></p>
+</div>
 
-        <input id="nameInput" type="text" placeholder="Your name">
-        <button id="continueBtn">Continue</button>
+<div id="name-screen" style="display:none;">
+    <p>Enter your name to continue:</p>
+    <input id="nameInput" type="text" placeholder="Your name">
+    <br>
+    <button id="continueBtn">Continue</button>
+    <p id="errorMsg"></p>
+</div>
 
-        <p id="errorMsg" style="color: red;"></p>
-    </div>
-
-    <script src="firebase.js"></script>
-    <script src="app.js"></script>
+<script src="firebase.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

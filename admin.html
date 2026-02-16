@@ -1,97 +1,53 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>SecureText Admin</title>
-    <link rel="stylesheet" href="style.css">
-
-    <!-- Firebase v8 -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureText Admin</title>
+<link rel="stylesheet" href="style.css">
+<style>
+body { font-family:sans-serif; padding:20px; }
+button{padding:5px 10px;margin:3px;cursor:pointer;}
+table{width:100%;border-collapse:collapse;margin-top:20px;}
+th,td{border:1px solid #ccc;padding:5px;text-align:left;}
+th{background:#eee;}
+</style>
 </head>
 <body>
+<h1>SecureText Admin Panel</h1>
 
-    <!-- ADMIN LOGIN SCREEN -->
-    <div id="admin-login">
-        <h1>Admin Login</h1>
-        <input type="email" id="adminEmail" placeholder="Email">
-        <input type="password" id="adminPassword" placeholder="Password">
-        <button id="loginBtn">Login</button>
-        <p id="loginError" style="color:red;"></p>
-    </div>
+<div>
+    <h2>Pending Users</h2>
+    <table id="pendingUsersTable">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Class</th>
+                <th>Approve</th>
+                <th>Ban</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
 
-    <!-- ADMIN DASHBOARD -->
-    <div id="admin-dashboard" style="display:none;">
-        <h1>Admin Panel</h1>
+<div>
+    <h2>Announcements</h2>
+    <input id="announcementInput" type="text" placeholder="Write announcement">
+    <button id="announceBtn">Send</button>
+    <ul id="announcementList"></ul>
+</div>
 
-        <h2>Pending Users</h2>
-        <div id="pendingUsers"></div>
+<div>
+    <h2>Chat Logs</h2>
+    <select id="classSelectAdmin">
+        <option value="">-- Select Class --</option>
+    </select>
+    <button id="loadLogsBtn">Load Logs</button>
+    <div id="chatLogs" style="margin-top:10px;"></div>
+</div>
 
-        <hr>
-
-        <h2>Live Chat View</h2>
-        <div id="chat-box" style="height:300px; overflow-y:auto; border:1px solid #ccc; padding:10px;"></div>
-
-        <button id="deleteAllBtn" style="margin-top:10px; background:red; color:white; padding:6px 12px; border:none; cursor:pointer;">
-            Delete All Chats
-        </button>
-
-        <br><br>
-        <button id="logoutBtn">Logout</button>
-    </div>
-
-    <script src="firebase.js"></script>
-
-<script>
-// Keep admin logged in after refresh
-firebase.auth().onAuthStateChanged(user => {
-    if (user) {
-        document.getElementById("admin-login").style.display = "none";
-        document.getElementById("admin-dashboard").style.display = "block";
-        startChatListener();
-    } else {
-        document.getElementById("admin-login").style.display = "block";
-        document.getElementById("admin-dashboard").style.display = "none";
-    }
-});
-
-const chatBox = document.getElementById("chat-box");
-const deleteAllBtn = document.getElementById("deleteAllBtn");
-
-function startChatListener() {
-    db.collection("messages").orderBy("timestamp")
-    .onSnapshot(snapshot => {
-        chatBox.innerHTML = "";
-
-        snapshot.forEach(doc => {
-            const msg = doc.data();
-            const messageDiv = document.createElement("div");
-            messageDiv.innerHTML = "<b>" + msg.name + ":</b> " + msg.text;
-            chatBox.appendChild(messageDiv);
-        });
-
-        chatBox.scrollTop = chatBox.scrollHeight;
-    });
-}
-
-// Delete all messages
-deleteAllBtn.onclick = async () => {
-    if (!confirm("Delete ALL messages?")) return;
-
-    const snapshot = await db.collection("messages").get();
-    const batch = db.batch();
-
-    snapshot.forEach(doc => {
-        batch.delete(doc.ref);
-    });
-
-    await batch.commit();
-    alert("All messages deleted.");
-};
-</script>
-
-    <script src="admin.js"></script>
-
+<script src="firebase.js"></script>
+<script src="admin.js"></script>
 </body>
 </html>

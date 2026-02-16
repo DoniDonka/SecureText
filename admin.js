@@ -1,137 +1,106 @@
-// ELEMENTS
-const adminLogin = document.getElementById("admin-login");
-const adminDashboard = document.getElementById("admin-dashboard");
-const pendingUsersDiv = document.getElementById("pendingUsers");
+document.addEventListener("DOMContentLoaded",()=>{
+const pendingTable=document.querySelector("#pendingUsersTable tbody");
+const announcementInput=document.getElementById("announcementInput");
+const announceBtn=document.getElementById("announceBtn");
+const announcementList=document.getElementById("announcementList");
+const classSelectAdmin=document.getElementById("classSelectAdmin");
+const loadLogsBtn=document.getElementById("loadLogsBtn");
+const chatLogsDiv=document.getElementById("chatLogs");
 
-const loginBtn = document.getElementById("loginBtn");
-const logoutBtn = document.getElementById("logoutBtn");
-const loginError = document.getElementById("loginError");
-
-
-// LOGIN BUTTON
-loginBtn.onclick = async () => {
-
-    const email = document.getElementById("adminEmail").value.trim();
-    const password = document.getElementById("adminPassword").value.trim();
-
-    loginError.textContent = "";
-
-    if (!email || !password) {
-        loginError.textContent = "Enter email and password.";
-        return;
-    }
-
-    try {
-
-        await auth.signInWithEmailAndPassword(email, password);
-
-    } catch (error) {
-
-        loginError.textContent = error.message;
-
-    }
-
-};
-
-
-// LOGOUT BUTTON
-logoutBtn.onclick = () => {
-
-    auth.signOut();
-
-};
-
-
-// KEEP ADMIN LOGGED IN AFTER REFRESH
-auth.onAuthStateChanged((user) => {
-
-    if (user) {
-
-        adminLogin.style.display = "none";
-        adminDashboard.style.display = "block";
-
-        startPendingUsersListener();
-
-    } else {
-
-        adminLogin.style.display = "block";
-        adminDashboard.style.display = "none";
-
-    }
-
+// ----------------------
+// Load classes for admin
+// ----------------------
+db.collection("classes").get().then(snapshot=>{
+    snapshot.forEach(doc=>{
+        const cls=doc.id;
+        const option=document.createElement("option");
+        option.value=cls;
+        option.textContent=cls;
+        classSelectAdmin.appendChild(option);
+    });
 });
 
-
-// REALTIME LISTENER FOR PENDING USERS
-function startPendingUsersListener() {
-
-    db.collection("pendingUsers")
-    .orderBy("createdAt", "asc")
-    .onSnapshot((snapshot) => {
-
-        pendingUsersDiv.innerHTML = "";
-
-        snapshot.forEach((doc) => {
-
-            const data = doc.data();
-
-            // ONLY SHOW NON APPROVED USERS
-            if (data.approved === true) return;
-
-            const div = document.createElement("div");
-
-            div.style.marginBottom = "10px";
-
-            div.innerHTML = `
-                <strong>${escapeHtml(data.name)}</strong>
-                <button onclick="approveUser('${doc.id}')" style="margin-left:10px;">
-                    Approve
-                </button>
+// ----------------------
+// Load pending users
+// ----------------------
+function loadPendingUsers(){
+    db.collection("pendingUsers").where("approved","==",false)
+    .onSnapshot(snapshot=>{
+        pendingTable.innerHTML="";
+        snapshot.forEach(doc=>{
+            const data=doc.data();
+            const tr=document.createElement("tr");
+            tr.innerHTML=`
+                <td>${data.name}</td>
+                <td>${data.class}</td>
+                <td><button class="approveBtn" data-id="${doc.id}">Approve</button></td>
+                <td><button class="banBtn" data-id="${doc.id}">Ban</button></td>
             `;
-
-            pendingUsersDiv.appendChild(div);
-
+            pendingTable.appendChild(tr);
         });
-
-    }, (error) => {
-
-        console.error("Pending users listener error:", error);
-
     });
-
 }
+loadPendingUsers();
 
-
-// APPROVE USER (THIS FIXES YOUR WHOLE SYSTEM)
-window.approveUser = async function(docId) {
-
-    try {
-
-        await db.collection("pendingUsers")
-        .doc(docId)
-        .update({
-
-            approved: true
-
-        });
-
-    } catch (error) {
-
-        console.error("Approve error:", error);
-
+// ----------------------
+// Approve & Ban buttons
+// ----------------------
+document.addEventListener("click",e=>{
+    if(e.target.classList.contains("approveBtn")){
+        const id=e.target.dataset.id;
+        db.collection("pendingUsers").doc(id).update({approved:true});
     }
+    if(e.target.classList.contains("banBtn")){
+        const id=e.target.dataset.id;
+        db.collection("pendingUsers").doc(id).delete();
+        // optionally remove user messages
+        db.collection("messages").where("userId","==",id).get().then(snap=>{
+            const batch=db.batch();
+            snap.forEach(d=>batch.delete(d.ref));
+            batch.commit();
+        });
+    }
+});
 
+// ----------------------
+// Announcements
+// ----------------------
+announceBtn.onclick=()=>{
+    const msg=announcementInput.value.trim();
+    if(!msg) return;
+    db.collection("announcements").add({
+        message: msg,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    announcementInput.value="";
 };
 
+// Show announcements live
+db.collection("announcements").orderBy("timestamp","desc").onSnapshot(snapshot=>{
+    announcementList.innerHTML="";
+    snapshot.forEach(doc=>{
+        const data=doc.data();
+        const li=document.createElement("li");
+        li.textContent=data.message;
+        announcementList.appendChild(li);
+    });
+});
 
-// ESCAPE HTML FOR SAFETY
-function escapeHtml(str) {
-
-    if (!str) return "";
-
-    return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-}
+// ----------------------
+// Chat logs per class
+// ----------------------
+loadLogsBtn.onclick=()=>{
+    const cls=classSelectAdmin.value;
+    if(!cls){chatLogsDiv.textContent="Select a class"; return;}
+    db.collection("messages").where("class","==",cls).orderBy("timestamp","asc").get().then(snapshot=>{
+        chatLogsDiv.innerHTML="";
+        snapshot.forEach(doc=>{
+            const data=doc.data();
+            const time=data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleTimeString() : "";
+            const p=document.createElement("p");
+            p.textContent=`[${time}] ${data.name}: ${data.text}`;
+            chatLogsDiv.appendChild(p);
+        });
+    });
+};
+});
