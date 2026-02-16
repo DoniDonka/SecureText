@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>SecureText Admin</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 
   <!-- Firebase v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -11,67 +11,96 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
   <style>
-    body { font-family: Arial, sans-serif; background:#111; color:#fff; padding:20px; }
-    button { padding:6px 12px; border-radius:4px; background:#222; color:#fff; border:1px solid #333; cursor:pointer; }
-    button:hover { background:#333; }
-    input { padding:6px; border-radius:4px; border:1px solid #333; background:#0e0e0e; color:#fff; }
-    table { width:100%; border-collapse:collapse; margin:10px 0; }
-    th, td { border:1px solid #333; padding:6px; }
-    th { background:#1b1b1b; }
-    #chatMessages { height:300px; overflow-y:auto; border:1px solid #333; padding:10px; }
-    .msg { margin-bottom:6px; }
+    /* minimal layout helpers (doesn't fight your style.css) */
+    .admin-wrap { max-width: 1150px; margin: 0 auto; padding: 18px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .card { border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); border-radius: 14px; padding: 14px; }
+    .card h2 { margin: 0 0 10px 0; font-size: 16px; }
+    .small { opacity: .75; font-size: 12px; }
+    .list { display: grid; gap: 10px; }
+    .item { border: 1px solid rgba(255,255,255,.10); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.04); }
+    .item-top { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .btn { padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: white; cursor: pointer; }
+    .btn:hover { filter: brightness(1.05); }
+    .btn.danger { border-color: rgba(255,90,90,.35); background: rgba(255,90,90,.12); }
+    .btn.good { border-color: rgba(60,255,160,.30); background: rgba(60,255,160,.12); }
+    .btn.warn { border-color: rgba(255,211,107,.35); background: rgba(255,211,107,.12); }
+    .btn-row { display:flex; flex-wrap:wrap; gap:8px; margin-top: 8px; }
+    input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.25); color: white; }
+    #admin-dashboard { display:none; }
+    #loginError { margin-top: 10px; color: #ff6b6b; }
+    .ok { color: rgba(60,255,160,.95); }
+    .bad { color: rgba(255,90,90,.95); }
+    .muted { opacity:.75; }
+    @media (max-width: 980px){ .row{ grid-template-columns: 1fr; } }
   </style>
 </head>
+
 <body>
 
   <!-- ADMIN LOGIN SCREEN -->
-  <div id="admin-login">
-    <h1>Admin Login</h1>
-    <input type="email" id="adminEmail" placeholder="Email">
-    <input type="password" id="adminPassword" placeholder="Password">
-    <button id="loginBtn">Login</button>
-    <p id="loginError" style="color:#ff6b6b;"></p>
+  <div id="admin-login" class="admin-wrap">
+    <div class="card">
+      <h1 style="margin:0 0 10px 0;">Admin Login</h1>
+      <p class="small">Login using your admin email + password (Firebase Auth).</p>
+
+      <div style="display:grid; gap:10px; margin-top:12px;">
+        <input type="email" id="adminEmail" placeholder="Email" />
+        <input type="password" id="adminPassword" placeholder="Password" />
+        <button id="loginBtn" class="btn good">Login</button>
+      </div>
+
+      <p id="loginError"></p>
+    </div>
   </div>
 
   <!-- ADMIN DASHBOARD -->
-  <div id="admin-dashboard" style="display:none;">
-    <h1>Admin Panel</h1>
-    <p id="adminInfo"></p>
-
-    <h2>Select Class</h2>
-    <div id="classButtons"></div>
-    <p id="classError" style="color:#ff6b6b;"></p>
-
-    <div id="admin-screen" style="display:none;">
-      <h2 id="classTitle"></h2>
-
-      <h3>Pending Users</h3>
-      <table id="pendingUsersTable">
-        <thead>
-          <tr><th>Name</th><th>Approve</th><th>Reject</th><th>Ban</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-
-      <h3>Banned Users</h3>
-      <table id="bannedUsersTable">
-        <thead><tr><th>Name</th><th>UserId</th><th>Unban</th></tr></thead>
-        <tbody></tbody>
-      </table>
-
-      <h3>Announcements</h3>
-      <input id="announcementInput" type="text" placeholder="Announcement text">
-      <button id="announceBtn">Send</button>
-      <div id="announcementsList" style="margin-top:10px;"></div>
-
-      <h3>Live Chat</h3>
-      <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <input id="adminChatInput" type="text" placeholder="Message as Admin" style="flex:1;">
-        <button id="adminSendBtn">Send</button>
+  <div id="admin-dashboard" class="admin-wrap">
+    <div class="card" style="margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+        <div>
+          <h1 style="margin:0;">SecureText Admin</h1>
+          <div class="small" id="adminMeta">Loading…</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="logoutBtn" class="btn">Logout</button>
+        </div>
       </div>
-      <div id="chatMessages"></div>
 
-      <button id="logoutBtn" style="margin-top:15px;">Logout</button>
+      <div class="btn-row" style="margin-top:12px;">
+        <button id="deleteAllChatsBtn" class="btn danger">Delete ALL Chat</button>
+        <button id="deleteAllAnnouncementsBtn" class="btn danger">Delete ALL Announcements</button>
+      </div>
+
+      <p id="adminStatus" class="small muted" style="margin:10px 0 0 0;"></p>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h2>Pending Users</h2>
+        <div class="small muted">Approve / reject / ban.</div>
+        <div id="pendingUsers" class="list" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>Approved + Active Users</h2>
+        <div class="small muted">People currently in chat (live presence). You can revoke or force rules.</div>
+        <div id="activeUsers" class="list" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <div class="card">
+        <h2>Announcements</h2>
+        <div class="small muted">Per-class announcements.</div>
+        <div id="announcements" class="list" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>Chat Log (Live)</h2>
+        <div class="small muted">Main messages only (replies stay in thread on client).</div>
+        <div id="chatLog" class="list" style="margin-top:10px; max-height: 360px; overflow:auto;"></div>
+      </div>
     </div>
 
   </div>
