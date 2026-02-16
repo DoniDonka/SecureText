@@ -398,3 +398,51 @@ button:active {
   #messages.messages { margin: 8px 10px; }
   #chat-input { padding: 10px; gap: 8px; }
 }
+/* =========================
+   HARD FIX: STOP INVISIBLE OVERLAYS
+   Paste at VERY bottom of style.css
+   ========================= */
+
+/* 1) Any screen that isn't active must not catch clicks */
+.screen {
+  pointer-events: none !important;
+}
+
+.screen.active {
+  pointer-events: auto !important;
+}
+
+/* 2) Make sure old legacy full-screen containers can't overlay */
+#name-screen,
+#waiting-screen {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* 3) TRUE FULLSCREEN CHAT (remove the boxing) */
+#chat-screen {
+  width: 100% !important;
+  max-width: none !important;   /* KILLS the 1100px box */
+  margin: 0 !important;         /* KILLS centering */
+  border-radius: 0 !important;  /* fullscreen edge-to-edge */
+  height: 100vh !important;
+  overflow: hidden !important;
+  align-items: stretch !important; /* IMPORTANT: stop centering */
+  justify-content: flex-start !important;
+}
+
+/* 4) Messages should be the only scroll area */
+#messages,
+#messages.messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+/* 5) Kill accidental overlays from pseudo elements */
+body::before,
+body::after {
+  pointer-events: none !important;
+}
