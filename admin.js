@@ -1,106 +1,125 @@
-document.addEventListener("DOMContentLoaded",()=>{
-const pendingTable=document.querySelector("#pendingUsersTable tbody");
-const announcementInput=document.getElementById("announcementInput");
-const announceBtn=document.getElementById("announceBtn");
-const announcementList=document.getElementById("announcementList");
-const classSelectAdmin=document.getElementById("classSelectAdmin");
-const loadLogsBtn=document.getElementById("loadLogsBtn");
-const chatLogsDiv=document.getElementById("chatLogs");
+document.addEventListener("DOMContentLoaded", () => {
+const db = firebase.firestore();
 
-// ----------------------
-// Load classes for admin
-// ----------------------
-db.collection("classes").get().then(snapshot=>{
-    snapshot.forEach(doc=>{
-        const cls=doc.id;
-        const option=document.createElement("option");
-        option.value=cls;
-        option.textContent=cls;
-        classSelectAdmin.appendChild(option);
-    });
-});
+// --- CONFIG: ADMIN EMAILS ---
+const admins = {
+    "doni@admin.com": "DoniClass",
+    "jimboy@admin.com": "EthanClass"
+};
 
-// ----------------------
-// Load pending users
-// ----------------------
-function loadPendingUsers(){
-    db.collection("pendingUsers").where("approved","==",false)
-    .onSnapshot(snapshot=>{
-        pendingTable.innerHTML="";
-        snapshot.forEach(doc=>{
-            const data=doc.data();
-            const tr=document.createElement("tr");
-            tr.innerHTML=`
-                <td>${data.name}</td>
-                <td>${data.class}</td>
-                <td><button class="approveBtn" data-id="${doc.id}">Approve</button></td>
-                <td><button class="banBtn" data-id="${doc.id}">Ban</button></td>
-            `;
-            pendingTable.appendChild(tr);
+// --- LOGIN ---
+let email = prompt("Enter admin email:");
+if(!admins[email]) {
+    alert("Not an admin!");
+    location.reload();
+} else {
+    document.getElementById("adminName").textContent = `Logged in as ${email}`;
+}
+
+// --- LOGOUT ---
+document.getElementById("logoutBtn").onclick = () => location.reload();
+
+// --- LOAD CLASSES ---
+const classesDiv = document.getElementById("classes");
+const classError = document.getElementById("classError");
+const adminScreen = document.getElementById("admin-screen");
+const classTitle = document.getElementById("classTitle");
+const pendingUsersTable = document.querySelector("#pendingUsersTable tbody");
+const bannedUsersTable = document.querySelector("#bannedUsersTable tbody");
+const announcementInput = document.getElementById("announcementInput");
+const announceBtn = document.getElementById("announceBtn");
+const announcementsList = document.getElementById("announcementsList");
+const chatMessages = document.getElementById("chatMessages");
+
+let currentClass = null;
+
+// ADMIN can only manage their own class
+const allowedClass = admins[email];
+const btn = document.createElement("button");
+btn.textContent = allowedClass;
+btn.onclick = () => loadClass(allowedClass);
+classesDiv.appendChild(btn);
+
+// --- LOAD CLASS FUNCTION ---
+function loadClass(classId) {
+    currentClass = classId;
+    classesDiv.style.display = "none";
+    adminScreen.style.display = "block";
+    classTitle.textContent = `Managing: ${classId}`;
+
+    // Load pending users
+    db.collection("pendingUsers").where("classId","==",classId).where("approved","==",false)
+    .onSnapshot(snapshot => {
+        pendingUsersTable.innerHTML = "";
+        snapshot.forEach(doc => {
+            const tr = document.createElement("tr");
+            const nameTd = document.createElement("td");
+            nameTd.textContent = doc.data().name;
+            const approveTd = document.createElement("td");
+            const denyTd = document.createElement("td");
+            const approveBtn = document.createElement("button");
+            approveBtn.textContent = "Approve";
+            approveBtn.onclick = () => doc.ref.update({approved:true});
+            const denyBtn = document.createElement("button");
+            denyBtn.textContent = "Deny";
+            denyBtn.onclick = () => doc.ref.delete();
+            approveTd.appendChild(approveBtn);
+            denyTd.appendChild(denyBtn);
+            tr.appendChild(nameTd);
+            tr.appendChild(approveTd);
+            tr.appendChild(denyTd);
+            pendingUsersTable.appendChild(tr);
         });
+    });
+
+    // Load banned users
+    db.collection("bannedUsers").where("classId","==",classId)
+    .onSnapshot(snapshot => {
+        bannedUsersTable.innerHTML = "";
+        snapshot.forEach(doc => {
+            const tr = document.createElement("tr");
+            const nameTd = document.createElement("td");
+            nameTd.textContent = doc.data().name;
+            tr.appendChild(nameTd);
+            bannedUsersTable.appendChild(tr);
+        });
+    });
+
+    // ANNOUNCEMENTS
+    announceBtn.onclick = () => {
+        const text = announcementInput.value.trim();
+        if(!text) return;
+        db.collection("announcements").add({
+            classId: classId,
+            text: text,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        announcementInput.value = "";
+    };
+    db.collection("announcements").where("classId","==",classId).orderBy("timestamp")
+    .onSnapshot(snapshot => {
+        announcementsList.innerHTML = "";
+        snapshot.forEach(doc => {
+            const p = document.createElement("p");
+            p.textContent = doc.data().text;
+            announcementsList.appendChild(p);
+        });
+    });
+
+    // LIVE CHAT
+    db.collection("messages").where("classId","==",classId).orderBy("timestamp")
+    .onSnapshot(snapshot => {
+        chatMessages.innerHTML = "";
+        snapshot.forEach(doc => {
+            const msg = doc.data();
+            const div = document.createElement("div");
+            div.className = `msg ${msg.userId === "admin"? "own" : ""}`;
+            const time = msg.timestamp && msg.timestamp.toDate ? msg.timestamp.toDate().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "Sending...";
+            div.textContent = `[${time}] ${msg.name}: ${msg.text}`;
+            chatMessages.appendChild(div);
+        });
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 }
-loadPendingUsers();
 
-// ----------------------
-// Approve & Ban buttons
-// ----------------------
-document.addEventListener("click",e=>{
-    if(e.target.classList.contains("approveBtn")){
-        const id=e.target.dataset.id;
-        db.collection("pendingUsers").doc(id).update({approved:true});
-    }
-    if(e.target.classList.contains("banBtn")){
-        const id=e.target.dataset.id;
-        db.collection("pendingUsers").doc(id).delete();
-        // optionally remove user messages
-        db.collection("messages").where("userId","==",id).get().then(snap=>{
-            const batch=db.batch();
-            snap.forEach(d=>batch.delete(d.ref));
-            batch.commit();
-        });
-    }
-});
-
-// ----------------------
-// Announcements
-// ----------------------
-announceBtn.onclick=()=>{
-    const msg=announcementInput.value.trim();
-    if(!msg) return;
-    db.collection("announcements").add({
-        message: msg,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    announcementInput.value="";
-};
-
-// Show announcements live
-db.collection("announcements").orderBy("timestamp","desc").onSnapshot(snapshot=>{
-    announcementList.innerHTML="";
-    snapshot.forEach(doc=>{
-        const data=doc.data();
-        const li=document.createElement("li");
-        li.textContent=data.message;
-        announcementList.appendChild(li);
-    });
-});
-
-// ----------------------
-// Chat logs per class
-// ----------------------
-loadLogsBtn.onclick=()=>{
-    const cls=classSelectAdmin.value;
-    if(!cls){chatLogsDiv.textContent="Select a class"; return;}
-    db.collection("messages").where("class","==",cls).orderBy("timestamp","asc").get().then(snapshot=>{
-        chatLogsDiv.innerHTML="";
-        snapshot.forEach(doc=>{
-            const data=doc.data();
-            const time=data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleTimeString() : "";
-            const p=document.createElement("p");
-            p.textContent=`[${time}] ${data.name}: ${data.text}`;
-            chatLogsDiv.appendChild(p);
-        });
-    });
-};
 });

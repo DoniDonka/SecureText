@@ -4,47 +4,64 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SecureText Admin</title>
+
 <link rel="stylesheet" href="style.css">
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
 <style>
-body { font-family:sans-serif; padding:20px; }
-button{padding:5px 10px;margin:3px;cursor:pointer;}
-table{width:100%;border-collapse:collapse;margin-top:20px;}
-th,td{border:1px solid #ccc;padding:5px;text-align:left;}
-th{background:#eee;}
+body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; }
+button { padding: 6px 12px; border-radius: 4px; background: #222; color: #fff; border: 1px solid #333; cursor: pointer; }
+button:hover { background: #333; }
+#admin-screen { max-width: 900px; margin: auto; text-align: left; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+th, td { border: 1px solid #333; padding: 5px; text-align: left; }
+th { background: #222; }
+.msg { margin-bottom: 8px; }
+.own { color: #4af; }
 </style>
 </head>
 <body>
-<h1>SecureText Admin Panel</h1>
 
-<div>
-    <h2>Pending Users</h2>
+<h1>SecureText Admin Panel</h1>
+<p id="adminName"></p>
+<button id="logoutBtn">Logout</button>
+
+<hr>
+
+<h2>Select Class to Manage</h2>
+<div id="classes"></div>
+<p id="classError" style="color:red;"></p>
+
+<div id="admin-screen" style="display:none;">
+    <h2 id="classTitle"></h2>
+
+    <h3>Pending Users</h3>
     <table id="pendingUsersTable">
         <thead>
-            <tr>
-                <th>Name</th>
-                <th>Class</th>
-                <th>Approve</th>
-                <th>Ban</th>
-            </tr>
+            <tr><th>Name</th><th>Approve</th><th>Deny</th></tr>
         </thead>
         <tbody></tbody>
     </table>
-</div>
 
-<div>
-    <h2>Announcements</h2>
-    <input id="announcementInput" type="text" placeholder="Write announcement">
-    <button id="announceBtn">Send</button>
-    <ul id="announcementList"></ul>
-</div>
+    <h3>Banned Users</h3>
+    <table id="bannedUsersTable">
+        <thead>
+            <tr><th>Name</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 
-<div>
-    <h2>Chat Logs</h2>
-    <select id="classSelectAdmin">
-        <option value="">-- Select Class --</option>
-    </select>
-    <button id="loadLogsBtn">Load Logs</button>
-    <div id="chatLogs" style="margin-top:10px;"></div>
+    <h3>Announcements</h3>
+    <input type="text" id="announcementInput" placeholder="Announcement text">
+    <button id="announceBtn">Send Announcement</button>
+    <div id="announcementsList"></div>
+
+    <h3>Live Chat</h3>
+    <div id="chatMessages" style="height:300px; overflow-y:auto; border:1px solid #333; padding:10px;"></div>
 </div>
 
 <script src="firebase.js"></script>
