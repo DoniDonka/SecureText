@@ -103,13 +103,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showRulesGate({ classId, userId, userName, className }, onContinue) {
-    // If already accepted, go straight in
     if (hasAcceptedRules(classId, userId)) {
       onContinue();
       return;
     }
 
-    // Fire confetti once when approved hits this gate
+    // Confetti once
     try {
       if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
         window.ST_UI.confettiBurst(1400);
@@ -118,7 +117,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const root = $("root") || document.body;
 
-    // remove any existing gate
     const old = document.getElementById("rulesGateOverlay");
     if (old) old.remove();
 
@@ -141,14 +139,12 @@ document.addEventListener("DOMContentLoaded", () => {
     card.style.width = "min(860px, 96vw)";
     card.style.borderRadius = "18px";
     card.style.border = "1px solid rgba(255,255,255,.12)";
-    card.style.background =
-      "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
+    card.style.background = "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
     card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
     card.style.padding = "22px 22px 18px 22px";
     card.style.position = "relative";
     card.style.overflow = "hidden";
 
-    // top stripe
     const stripe = document.createElement("div");
     stripe.style.position = "absolute";
     stripe.style.inset = "-40% -40% auto -40%";
@@ -221,10 +217,8 @@ document.addEventListener("DOMContentLoaded", () => {
     box.style.background = "rgba(0,0,0,.30)";
     box.style.padding = "14px 14px";
     box.style.lineHeight = "1.4";
-
     box.innerHTML = `
       <div style="font-weight:900;letter-spacing:.2px;margin-bottom:10px;">Read carefully. These rules are enforced.</div>
-
       <div style="display:grid;gap:8px;font-size:14px;">
         <div>• <strong>No cursing / harassment.</strong></div>
         <div>• <strong>No racial slurs</strong> or hate speech (instant ban).</div>
@@ -232,7 +226,6 @@ document.addEventListener("DOMContentLoaded", () => {
         <div>• <strong>No spam</strong> or flooding chat.</div>
         <div>• <strong>Respect admins</strong> and class members.</div>
       </div>
-
       <div style="margin-top:12px;font-size:12px;opacity:.78;">
         Breaking rules may result in <strong>rejection</strong> or a <strong>ban</strong> without warning.
       </div>
@@ -289,10 +282,6 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.style.borderRadius = "12px";
     btn.style.cursor = "not-allowed";
     btn.style.transition = "transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease";
-    btn.onmouseenter = () => { if (!btn.disabled) btn.style.transform = "translateY(-1px)"; };
-    btn.onmouseleave = () => { btn.style.transform = "translateY(0)"; };
-    btn.onmousedown = () => { if (!btn.disabled) btn.style.opacity = ".95"; };
-    btn.onmouseup = () => { btn.style.opacity = "1"; };
 
     btnRow.appendChild(btn);
 
@@ -307,22 +296,15 @@ document.addEventListener("DOMContentLoaded", () => {
     overlay.appendChild(card);
     root.appendChild(overlay);
 
-    // gating logic: 30s delay + 10s button lock + checkbox required
     let delayLeft = 30;
     let lockLeft = 10;
-
     const delayEl = document.getElementById("rulesDelayText");
+
     const tick = () => {
       if (delayEl) delayEl.textContent = `Security delay: ${delayLeft}s`;
-      if (lockLeft > 0) {
-        lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
-      } else {
-        lockedNote.textContent = checkbox.checked
-          ? "You may continue."
-          : "Check the box to continue.";
-      }
+      if (lockLeft > 0) lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
+      else lockedNote.textContent = checkbox.checked ? "You may continue." : "Check the box to continue.";
 
-      // enable button only when BOTH are satisfied
       const canClick = delayLeft <= 0 && lockLeft <= 0 && checkbox.checked;
       btn.disabled = !canClick;
       btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
@@ -337,17 +319,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 1000);
 
     checkbox.addEventListener("change", tick);
-
     tick();
 
     btn.onclick = () => {
-      // if for any reason disabled, ignore
       if (btn.disabled) return;
-
       try { clearInterval(interval); } catch {}
       setAcceptedRules(classId, userId);
 
-      // remove overlay and continue to chat
       overlay.style.opacity = "0";
       overlay.style.transition = "opacity .18s ease";
       overlay.style.pointerEvents = "none";
@@ -435,8 +413,6 @@ document.addEventListener("DOMContentLoaded", () => {
           const btn = document.createElement("button");
           btn.className = "class-btn";
           btn.type = "button";
-
-          // keep your tile styling: if you want, you can swap class-btn -> class-tile in html/css
           btn.textContent = data.name || doc.id;
 
           btn.onclick = () => {
@@ -595,7 +571,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = data.status || (data.approved ? "approved" : "pending");
 
       if (status === "approved") {
-        // NEW: Rules gate before chat
         showRulesGate(
           {
             classId,
@@ -632,7 +607,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const status = data.status || (data.approved ? "approved" : "pending");
 
       if (status === "approved") {
-        // NEW: Rules gate before chat
         showRulesGate(
           {
             classId,
@@ -660,13 +634,81 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ===== CHAT =====
+  // ===== CHAT (OPTIMIZED RENDERING) =====
   let chatUnsubs = [];
   function clearChatListeners() {
     chatUnsubs.forEach((u) => {
       try { u(); } catch {}
     });
     chatUnsubs = [];
+  }
+
+  function isNearBottom(el, thresholdPx = 120) {
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
+  }
+
+  function fmtTime(ts) {
+    return ts && ts.toDate
+      ? ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "Sending...";
+  }
+
+  function buildMsgEl({ docId, name, userId, text, time, isOwn }) {
+    const wrap = document.createElement("div");
+    wrap.className = `msg ${isOwn ? "own" : ""}`;
+    wrap.dataset.id = docId;
+
+    wrap.innerHTML = `
+      <div class="msg-top">
+        <strong>${escapeHtml(name || "")}</strong>
+        <span class="msg-time">${escapeHtml(time || "")}</span>
+      </div>
+      <div class="msg-text">${escapeHtml(text || "")}</div>
+      <div class="msg-actions">
+        <button class="reply-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">Reply</button>
+        <button class="view-replies-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">View replies</button>
+        ${isOwn ? `<button class="delete-btn" data-id="${docId}" data-parent="null">Delete</button>` : ""}
+      </div>
+    `;
+    return wrap;
+  }
+
+  function updateMsgEl(el, { name, text, time, isOwn }) {
+    if (!el) return;
+
+    // class own/non-own
+    el.className = `msg ${isOwn ? "own" : ""}`;
+
+    const strong = el.querySelector(".msg-top strong");
+    if (strong) strong.textContent = name || "";
+
+    const t = el.querySelector(".msg-time");
+    if (t) t.textContent = time || "";
+
+    const txt = el.querySelector(".msg-text");
+    if (txt) txt.innerHTML = escapeHtml(text || "");
+
+    // update action buttons dataset text
+    const replyBtn = el.querySelector(".reply-btn");
+    const viewBtn = el.querySelector(".view-replies-btn");
+    if (replyBtn) replyBtn.dataset.text = encodeURIComponent(text || "");
+    if (viewBtn) viewBtn.dataset.text = encodeURIComponent(text || "");
+
+    // ensure delete button exists only if own
+    const actions = el.querySelector(".msg-actions");
+    if (actions) {
+      const del = actions.querySelector(".delete-btn");
+      if (isOwn && !del) {
+        const b = document.createElement("button");
+        b.className = "delete-btn";
+        b.dataset.id = el.dataset.id;
+        b.dataset.parent = "null";
+        b.textContent = "Delete";
+        actions.appendChild(b);
+      }
+      if (!isOwn && del) del.remove();
+    }
   }
 
   function loadChat(name, classId, userId) {
@@ -706,7 +748,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // announcements (per-class)
+    // announcements (per-class) - small list, OK to re-render
     chatUnsubs.push(
       announcementsCol(classId)
         .orderBy("timestamp", "asc")
@@ -716,29 +758,49 @@ document.addEventListener("DOMContentLoaded", () => {
           box.innerHTML = "";
           snap.forEach((doc) => {
             const a = doc.data() || {};
-            const t =
-              a.timestamp && a.timestamp.toDate
-                ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : "";
+            const t = fmtTime(a.timestamp);
             const div = document.createElement("div");
-            div.innerHTML = `<div style="margin:6px 0;"><strong>[${t}]</strong> ${escapeHtml(a.text || "")}</div>`;
+            div.innerHTML = `<div style="margin:6px 0;"><strong>[${escapeHtml(t)}]</strong> ${escapeHtml(a.text || "")}</div>`;
             box.appendChild(div);
           });
           if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
         })
     );
 
-    // typing indicator (per-class)
+    // typing indicator (per-class) - debounce + state-aware writes
     let typingTimeout = null;
+    let typingDebounce = null;
+    let localTyping = false;
+
+    async function setTyping(val) {
+      if (localTyping === val) return; // avoid spamming
+      localTyping = val;
+      try {
+        await typingDoc(classId).set({ [userId]: val }, { merge: true });
+      } catch {}
+    }
+
     if (msgInput) {
-      msgInput.addEventListener("input", () => {
-        typingDoc(classId).set({ [userId]: true }, { merge: true });
+      msgInput.oninput = () => {
+        // debounce the "true" write
+        if (typingDebounce) clearTimeout(typingDebounce);
+        typingDebounce = setTimeout(() => {
+          setTyping(true);
+        }, 220);
+
         if (typingTimeout) clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => {
-          typingDoc(classId).set({ [userId]: false }, { merge: true });
+          setTyping(false);
         }, 1500);
-      });
+      };
     }
+
+    // best-effort cleanup
+    window.addEventListener("beforeunload", () => {
+      try {
+        typingDoc(classId).set({ [userId]: false }, { merge: true });
+      } catch {}
+    });
 
     chatUnsubs.push(
       typingDoc(classId).onSnapshot((doc) => {
@@ -778,54 +840,110 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        await messagesCol(classId).add({
-          name,
-          userId,
-          text,
-          replyTo: null,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
+        try {
+          await messagesCol(classId).add({
+            name,
+            userId,
+            text,
+            replyTo: null,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          console.error(e);
+          if (chatStatus) {
+            chatStatus.textContent = "Failed to send (check rules/quota).";
+            chatStatus.className = "notice bad";
+          }
+          return;
+        }
 
         msgInput.value = "";
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
+        setTyping(false);
       };
     }
 
-    // live messages (MAIN)
+    // ===== LIVE MESSAGES (OPTIMIZED: docChanges, no full re-render) =====
+    const msgEls = new Map(); // docId -> element
+
+    function clearAllMessages() {
+      msgEls.clear();
+      if (messagesDiv) messagesDiv.innerHTML = "";
+    }
+
+    clearAllMessages();
+
     chatUnsubs.push(
       messagesCol(classId)
         .orderBy("timestamp", "asc")
-        .onSnapshot((snap) => {
-          if (!messagesDiv) return;
-          messagesDiv.innerHTML = "";
-          snap.forEach((doc) => {
-            const m = doc.data() || {};
-            if (m.replyTo !== null) return;
+        .onSnapshot(
+          (snap) => {
+            if (!messagesDiv) return;
 
-            const isOwn = m.userId === userId;
-            const time =
-              m.timestamp && m.timestamp.toDate
-                ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : "Sending...";
+            const shouldStick = isNearBottom(messagesDiv, 160);
 
-            messagesDiv.innerHTML += `
-              <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-                <div class="msg-top">
-                  <strong>${escapeHtml(m.name || "")}</strong>
-                  <span class="msg-time">${time}</span>
-                </div>
-                <div class="msg-text">${escapeHtml(m.text || "")}</div>
-                <div class="msg-actions">
-                  <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">Reply</button>
-                  <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">View replies</button>
-                  ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
-                </div>
-              </div>
-            `;
-          });
+            const frag = document.createDocumentFragment();
 
-          messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        })
+            snap.docChanges().forEach((ch) => {
+              const doc = ch.doc;
+              const m = doc.data() || {};
+
+              // Only main messages
+              if (m.replyTo !== null) return;
+
+              const docId = doc.id;
+
+              if (ch.type === "removed") {
+                const el = msgEls.get(docId);
+                if (el && el.parentNode) el.parentNode.removeChild(el);
+                msgEls.delete(docId);
+                return;
+              }
+
+              const isOwn = m.userId === userId;
+              const time = fmtTime(m.timestamp);
+
+              if (ch.type === "added") {
+                // create + append in order
+                const el = buildMsgEl({
+                  docId,
+                  name: m.name || "",
+                  userId: m.userId || "",
+                  text: m.text || "",
+                  time,
+                  isOwn,
+                });
+                msgEls.set(docId, el);
+                frag.appendChild(el);
+              }
+
+              if (ch.type === "modified") {
+                const el = msgEls.get(docId);
+                if (el) {
+                  updateMsgEl(el, {
+                    name: m.name || "",
+                    text: m.text || "",
+                    time,
+                    isOwn,
+                  });
+                }
+              }
+            });
+
+            // Append any newly added nodes in one paint
+            if (frag.childNodes.length) messagesDiv.appendChild(frag);
+
+            if (shouldStick) {
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+          },
+          (err) => {
+            console.error("Messages listener error:", err);
+            if (chatStatus) {
+              chatStatus.textContent = "Chat stream error (check quota/rules).";
+              chatStatus.className = "notice bad";
+            }
+          }
+        )
     );
   }
 
@@ -850,22 +968,22 @@ document.addEventListener("DOMContentLoaded", () => {
       .orderBy("timestamp", "asc")
       .onSnapshot((snap) => {
         if (!list) return;
+
+        const stick = isNearBottom(list, 120);
         list.innerHTML = "";
+
         snap.forEach((doc) => {
           const m = doc.data() || {};
           if (m.replyTo !== parentId) return;
 
           const isOwn = m.userId === userId;
-          const time =
-            m.timestamp && m.timestamp.toDate
-              ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-              : "Sending...";
+          const time = fmtTime(m.timestamp);
 
           list.innerHTML += `
             <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
               <div class="msg-top">
                 <strong>${escapeHtml(m.name || "")}</strong>
-                <span class="msg-time">${time}</span>
+                <span class="msg-time">${escapeHtml(time)}</span>
               </div>
               <div class="msg-text">${escapeHtml(m.text || "")}</div>
               <div class="msg-actions">
@@ -875,7 +993,7 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
         });
 
-        list.scrollTop = list.scrollHeight;
+        if (stick) list.scrollTop = list.scrollHeight;
       });
 
     if (sendReplyBtn) {
