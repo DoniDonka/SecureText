@@ -1,8 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // ===== helpers =====
   const $ = (id) => document.getElementById(id);
 
-  // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
     pin: $("screen-pin"),
@@ -11,7 +9,6 @@ document.addEventListener("DOMContentLoaded", () => {
     chat: $("screen-chat"),
   };
 
-  // Extra legacy full-screen nodes that might still exist (from older versions / CSS)
   const legacyFullScreens = ["name-screen", "waiting-screen", "chat-screen"];
 
   function hardHideEl(el) {
@@ -32,20 +29,18 @@ document.addEventListener("DOMContentLoaded", () => {
     el.style.visibility = "visible";
   }
 
-  // IMPORTANT: Always ensure only ONE main screen can exist/click at once
   function showScreen(key) {
-    // Hide all known screens
     Object.values(screens).forEach((el) => hardHideEl(el));
-
-    // Also hide any old full-screen elements that can overlay and block clicks
     legacyFullScreens.forEach((id) => {
       const el = $(id);
       if (id === "chat-screen") return;
       if (el) hardHideEl(el);
     });
-
-    // Show the target screen
     hardShowEl(screens[key]);
+
+    // admin path button ONLY on class select
+    const adminBtn = $("adminPathBtn");
+    if (adminBtn) adminBtn.style.display = key === "class" ? "block" : "none";
   }
 
   function escapeHtml(str) {
@@ -62,44 +57,45 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem("className");
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
-    // do NOT clear rules acceptance here unless you want it to re-ask next time
   }
 
   function classDocRef(classId) {
     return db.collection("classes").doc(classId);
   }
-
   function pendingRef(classId, userId) {
     return classDocRef(classId).collection("pendingUsers").doc(userId);
   }
-
   function bannedRef(classId, userId) {
     return classDocRef(classId).collection("bannedUsers").doc(userId);
   }
-
   function messagesCol(classId) {
     return classDocRef(classId).collection("messages");
   }
-
   function announcementsCol(classId) {
     return classDocRef(classId).collection("announcements");
   }
-
   function typingDoc(classId) {
     return classDocRef(classId).collection("meta").doc("typing");
   }
+  function commandsDoc(classId) {
+    return classDocRef(classId).collection("meta").doc("commands");
+  }
+  function pendingAttachmentsCol(classId) {
+    return classDocRef(classId).collection("pendingAttachments");
+  }
 
-  // ===== RULES GATE (NEW) =====
+  // ===== RULES GATE =====
   function rulesKey(classId, userId) {
     return `rulesAccepted:${classId}:${userId}`;
   }
-
   function hasAcceptedRules(classId, userId) {
     return localStorage.getItem(rulesKey(classId, userId)) === "true";
   }
-
   function setAcceptedRules(classId, userId) {
     localStorage.setItem(rulesKey(classId, userId), "true");
+  }
+  function clearAcceptedRules(classId, userId) {
+    localStorage.removeItem(rulesKey(classId, userId));
   }
 
   function showRulesGate({ classId, userId, userName, className }, onContinue) {
@@ -108,15 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Confetti once
-    try {
-      if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
-        window.ST_UI.confettiBurst(1400);
-      }
-    } catch {}
-
     const root = $("root") || document.body;
-
     const old = document.getElementById("rulesGateOverlay");
     if (old) old.remove();
 
@@ -145,42 +133,15 @@ document.addEventListener("DOMContentLoaded", () => {
     card.style.position = "relative";
     card.style.overflow = "hidden";
 
-    const stripe = document.createElement("div");
-    stripe.style.position = "absolute";
-    stripe.style.inset = "-40% -40% auto -40%";
-    stripe.style.height = "240px";
-    stripe.style.background =
-      "conic-gradient(from 180deg, rgba(255,90,90,.0), rgba(255,90,90,.18), rgba(255,211,107,.14), rgba(255,90,90,.0))";
-    stripe.style.filter = "blur(12px)";
-    stripe.style.opacity = "0.9";
-    stripe.style.animation = "stSpin 4.8s linear infinite";
-    card.appendChild(stripe);
-
-    const styleTag = document.createElement("style");
-    styleTag.textContent = `
-      @keyframes stSpin { to { transform: rotate(360deg);} }
-      @keyframes stIn { from { opacity:0; transform: translateY(14px) scale(.985);} to { opacity:1; transform: translateY(0) scale(1);} }
-      @keyframes stPulse { 0%{ box-shadow: 0 0 0 rgba(255,90,90,0);} 50%{ box-shadow: 0 0 28px rgba(255,90,90,.10);} 100%{ box-shadow: 0 0 0 rgba(255,90,90,0);} }
-    `;
-    document.head.appendChild(styleTag);
-
-    card.style.animation = "stIn .35s ease";
-    card.style.transformOrigin = "center";
-
-    const content = document.createElement("div");
-    content.style.position = "relative";
-    content.style.zIndex = "2";
-    content.style.display = "grid";
-    content.style.gap = "14px";
-
     const title = document.createElement("div");
+    title.style.position = "relative";
+    title.style.zIndex = "2";
     title.style.display = "flex";
     title.style.alignItems = "center";
     title.style.justifyContent = "space-between";
     title.style.gap = "12px";
 
-    const left = document.createElement("div");
-    left.innerHTML = `
+    title.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;">
         <div style="
           width:46px;height:46px;border-radius:14px;
@@ -189,7 +150,6 @@ document.addEventListener("DOMContentLoaded", () => {
           display:grid;place-items:center;
           box-shadow: 0 12px 35px rgba(0,0,0,.45);
           font-weight:900;letter-spacing:.6px;
-          animation: stPulse 1.6s ease infinite;
         ">!</div>
         <div>
           <div style="font-size:22px;font-weight:900;letter-spacing:.4px;">Rules & Conduct Agreement</div>
@@ -198,20 +158,16 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
       </div>
-    `;
-
-    const right = document.createElement("div");
-    right.innerHTML = `
       <div style="text-align:right;">
         <div style="font-size:12px;opacity:.78;">Approved ✅</div>
         <div id="rulesDelayText" style="margin-top:3px;font-size:12px;opacity:.78;">Security delay: 30s</div>
       </div>
     `;
 
-    title.appendChild(left);
-    title.appendChild(right);
-
     const box = document.createElement("div");
+    box.style.position = "relative";
+    box.style.zIndex = "2";
+    box.style.marginTop = "14px";
     box.style.border = "1px solid rgba(255,255,255,.10)";
     box.style.borderRadius = "16px";
     box.style.background = "rgba(0,0,0,.30)";
@@ -232,9 +188,11 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
 
     const controls = document.createElement("div");
+    controls.style.position = "relative";
+    controls.style.zIndex = "2";
+    controls.style.marginTop = "14px";
     controls.style.display = "grid";
     controls.style.gap = "10px";
-    controls.style.marginTop = "2px";
 
     const checkWrap = document.createElement("label");
     checkWrap.style.display = "flex";
@@ -242,37 +200,22 @@ document.addEventListener("DOMContentLoaded", () => {
     checkWrap.style.gap = "10px";
     checkWrap.style.userSelect = "none";
     checkWrap.style.cursor = "pointer";
-    checkWrap.style.opacity = "0.95";
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.id = "rulesChk";
     checkbox.style.transform = "scale(1.15)";
     checkbox.style.cursor = "pointer";
 
     const checkText = document.createElement("div");
-    checkText.innerHTML = `<div style="font-size:13px;"><strong>I understand</strong> and will follow the rules above.</div>
-                           <div style="font-size:12px;opacity:.72;">You must accept to enter chat.</div>`;
+    checkText.innerHTML = `
+      <div style="font-size:13px;"><strong>I understand</strong> and will follow the rules above.</div>
+      <div style="font-size:12px;opacity:.72;">You must accept to enter chat.</div>
+    `;
 
     checkWrap.appendChild(checkbox);
     checkWrap.appendChild(checkText);
 
-    const btnRow = document.createElement("div");
-    btnRow.style.display = "flex";
-    btnRow.style.justifyContent = "flex-end";
-    btnRow.style.gap = "10px";
-    btnRow.style.marginTop = "2px";
-
-    const lockedNote = document.createElement("div");
-    lockedNote.id = "rulesLockedNote";
-    lockedNote.style.marginTop = "6px";
-    lockedNote.style.fontSize = "12px";
-    lockedNote.style.opacity = "0.78";
-    lockedNote.textContent = "Please wait…";
-
     const btn = document.createElement("button");
-    btn.id = "rulesAcceptBtn";
-    btn.type = "button";
     btn.textContent = "I Understand";
     btn.disabled = true;
     btn.style.border = "1px solid rgba(255,255,255,.14)";
@@ -281,27 +224,30 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.style.padding = "10px 14px";
     btn.style.borderRadius = "12px";
     btn.style.cursor = "not-allowed";
-    btn.style.transition = "transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease";
 
-    btnRow.appendChild(btn);
+    const lockedNote = document.createElement("div");
+    lockedNote.style.marginTop = "6px";
+    lockedNote.style.fontSize = "12px";
+    lockedNote.style.opacity = "0.78";
+    lockedNote.textContent = "Please wait…";
 
     controls.appendChild(checkWrap);
-    controls.appendChild(btnRow);
+    controls.appendChild(btn);
     controls.appendChild(lockedNote);
 
-    content.appendChild(title);
-    content.appendChild(box);
-    content.appendChild(controls);
-    card.appendChild(content);
+    card.appendChild(title);
+    card.appendChild(box);
+    card.appendChild(controls);
     overlay.appendChild(card);
     root.appendChild(overlay);
 
     let delayLeft = 30;
     let lockLeft = 10;
-    const delayEl = document.getElementById("rulesDelayText");
 
+    const delayEl = document.getElementById("rulesDelayText");
     const tick = () => {
       if (delayEl) delayEl.textContent = `Security delay: ${delayLeft}s`;
+
       if (lockLeft > 0) lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
       else lockedNote.textContent = checkbox.checked ? "You may continue." : "Check the box to continue.";
 
@@ -340,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedClassId = null;
   let selectedClassName = null;
 
-  // ===== restore session on refresh =====
+  // ===== restore session =====
   const savedClassId = localStorage.getItem("classId");
   const savedUserId = localStorage.getItem("userId");
   const savedUserName = localStorage.getItem("userName");
@@ -357,40 +303,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ===== UI events =====
   const pinBackBtn = $("pinBackBtn");
-  if (pinBackBtn) {
-    pinBackBtn.onclick = () => {
-      $("pinInput").value = "";
-      $("pinError").textContent = "";
-      showScreen("class");
-    };
-  }
+  if (pinBackBtn) pinBackBtn.onclick = () => { $("pinInput").value = ""; $("pinError").textContent = ""; showScreen("class"); };
 
   const nameBackBtn = $("nameBackBtn");
-  if (nameBackBtn) {
-    nameBackBtn.onclick = () => {
-      $("nameInput").value = "";
-      $("nameError").textContent = "";
-      showScreen("pin");
-    };
-  }
+  if (nameBackBtn) nameBackBtn.onclick = () => { $("nameInput").value = ""; $("nameError").textContent = ""; showScreen("pin"); };
 
   const resetBtn = $("resetBtn");
-  if (resetBtn) {
-    resetBtn.onclick = () => {
-      clearLS();
-      location.reload();
-    };
-  }
+  if (resetBtn) resetBtn.onclick = () => { clearLS(); location.reload(); };
 
   const logoutBtn = $("logoutBtn");
-  if (logoutBtn) {
-    logoutBtn.onclick = () => {
-      clearLS();
-      location.reload();
-    };
-  }
+  if (logoutBtn) logoutBtn.onclick = () => { clearLS(); location.reload(); };
 
-  // ===== 1) Load classes dynamically =====
+  // ===== load classes =====
   function loadClasses() {
     const classesWrap = $("classes");
     const err = $("classError");
@@ -399,8 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
     classesWrap.innerHTML = "Loading classes...";
     if (err) err.textContent = "";
 
-    db.collection("classes")
-      .get()
+    db.collection("classes").get()
       .then((snap) => {
         classesWrap.innerHTML = "";
         if (snap.empty) {
@@ -418,10 +341,8 @@ document.addEventListener("DOMContentLoaded", () => {
           btn.onclick = () => {
             selectedClassId = doc.id;
             selectedClassName = data.name || doc.id;
-
             const pinClassName = $("pinClassName");
             if (pinClassName) pinClassName.textContent = selectedClassName;
-
             $("pinError").textContent = "";
             $("pinInput").value = "";
             showScreen("pin");
@@ -436,31 +357,20 @@ document.addEventListener("DOMContentLoaded", () => {
       });
   }
 
-  // ===== 2) PIN verify =====
+  // ===== PIN verify =====
   const pinContinueBtn = $("pinContinueBtn");
   if (pinContinueBtn) {
     pinContinueBtn.onclick = async () => {
       const pin = $("pinInput").value.trim();
-      if (!selectedClassId) {
-        $("pinError").textContent = "No class selected.";
-        return;
-      }
-      if (!pin) {
-        $("pinError").textContent = "Enter a PIN.";
-        return;
-      }
+      if (!selectedClassId) return ($("pinError").textContent = "No class selected.");
+      if (!pin) return ($("pinError").textContent = "Enter a PIN.");
 
       try {
         const clsDoc = await classDocRef(selectedClassId).get();
-        if (!clsDoc.exists) {
-          $("pinError").textContent = "Class not found.";
-          return;
-        }
+        if (!clsDoc.exists) return ($("pinError").textContent = "Class not found.");
+
         const data = clsDoc.data() || {};
-        if (String(data.pin || "") !== pin) {
-          $("pinError").textContent = "Wrong PIN!";
-          return;
-        }
+        if (String(data.pin || "") !== pin) return ($("pinError").textContent = "Wrong PIN!");
 
         $("pinError").textContent = "";
         $("nameError").textContent = "";
@@ -473,28 +383,19 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  // ===== 3) Create pending user =====
+  // ===== create pending user =====
   const nameContinueBtn = $("nameContinueBtn");
   if (nameContinueBtn) {
     nameContinueBtn.onclick = async () => {
       const name = $("nameInput").value.trim();
-      if (!selectedClassId) {
-        $("nameError").textContent = "No class selected.";
-        return;
-      }
-      if (!name) {
-        $("nameError").textContent = "Enter a name.";
-        return;
-      }
+      if (!selectedClassId) return ($("nameError").textContent = "No class selected.");
+      if (!name) return ($("nameError").textContent = "Enter a name.");
 
       const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
       try {
         const bannedDoc = await bannedRef(selectedClassId, userId).get();
-        if (bannedDoc.exists) {
-          showDenied("You are banned from this class.");
-          return;
-        }
+        if (bannedDoc.exists) return showDenied("You are banned from this class.");
 
         await pendingRef(selectedClassId, userId).set({
           name,
@@ -523,41 +424,26 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  // ===== waiting screen =====
   function showWaiting(name, classId) {
     const waitText = $("waitText");
     const waitStatus = $("waitStatus");
-
     if (waitText) waitText.textContent = `${name}, you requested access to ${selectedClassName || classId}.`;
-    if (waitStatus) {
-      waitStatus.textContent = "";
-      waitStatus.className = "notice";
-    }
-
+    if (waitStatus) { waitStatus.textContent = ""; waitStatus.className = "notice"; }
     showScreen("wait");
   }
 
   function showDenied(msg) {
     const waitText = $("waitText");
     const waitStatus = $("waitStatus");
-
     if (waitText) waitText.textContent = "Access blocked.";
-    if (waitStatus) {
-      waitStatus.textContent = msg;
-      waitStatus.className = "notice bad";
-    }
-
+    if (waitStatus) { waitStatus.textContent = msg; waitStatus.className = "notice bad"; }
     showScreen("wait");
   }
 
-  // ===== restore =====
   async function restoreFlow(classId, userId, name) {
     try {
       const banDoc = await bannedRef(classId, userId).get();
-      if (banDoc.exists) {
-        showDenied("You are banned from this class.");
-        return;
-      }
+      if (banDoc.exists) return showDenied("You are banned from this class.");
 
       const pDoc = await pendingRef(classId, userId).get();
       if (!pDoc.exists) {
@@ -572,19 +458,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (status === "approved") {
         showRulesGate(
-          {
-            classId,
-            userId,
-            userName: name,
-            className: selectedClassName || data.className || classId,
-          },
+          { classId, userId, userName: name, className: selectedClassName || data.className || classId },
           () => loadChat(name, classId, userId)
         );
-      } else if (status === "rejected") {
-        showDenied("You were rejected by the admin.");
-      } else if (status === "banned") {
-        showDenied("You are banned from this class.");
-      } else {
+      } else if (status === "rejected") showDenied("You were rejected by the admin.");
+      else if (status === "banned") showDenied("You are banned from this class.");
+      else {
         showWaiting(name, classId);
         watchStatus(classId, userId, name);
       }
@@ -595,37 +474,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ===== status watcher =====
   function watchStatus(classId, userId, name) {
     pendingRef(classId, userId).onSnapshot((doc) => {
-      if (!doc.exists) {
-        showDenied("Your request was removed (denied).");
-        return;
-      }
+      if (!doc.exists) return showDenied("Your request was removed (denied).");
 
       const data = doc.data() || {};
       const status = data.status || (data.approved ? "approved" : "pending");
 
       if (status === "approved") {
         showRulesGate(
-          {
-            classId,
-            userId,
-            userName: name,
-            className: selectedClassName || data.className || classId,
-          },
+          { classId, userId, userName: name, className: selectedClassName || data.className || classId },
           () => loadChat(name, classId, userId)
         );
-      } else if (status === "rejected") {
-        showDenied("You were rejected by the admin.");
-      } else if (status === "banned") {
-        showDenied("You are banned from this class.");
-      } else {
+      } else if (status === "rejected") showDenied("You were rejected by the admin.");
+      else if (status === "banned") showDenied("You are banned from this class.");
+      else {
         const waitStatus = $("waitStatus");
-        if (waitStatus) {
-          waitStatus.textContent = "Pending approval...";
-          waitStatus.className = "notice warn";
-        }
+        if (waitStatus) { waitStatus.textContent = "Pending approval..."; waitStatus.className = "notice warn"; }
       }
     });
 
@@ -634,90 +499,48 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ===== CHAT (OPTIMIZED RENDERING) =====
+  // ===== CHAT (optimized rendering) =====
   let chatUnsubs = [];
   function clearChatListeners() {
-    chatUnsubs.forEach((u) => {
-      try { u(); } catch {}
-    });
+    chatUnsubs.forEach((u) => { try { u(); } catch {} });
     chatUnsubs = [];
   }
 
-  function isNearBottom(el, thresholdPx = 120) {
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
-  }
+  // DOM cache for messages to prevent flashing
+  const msgNodes = new Map(); // messageId -> element
 
-  function fmtTime(ts) {
-    return ts && ts.toDate
-      ? ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : "Sending...";
-  }
-
-  function buildMsgEl({ docId, name, userId, text, time, isOwn }) {
-    const wrap = document.createElement("div");
-    wrap.className = `msg ${isOwn ? "own" : ""}`;
-    wrap.dataset.id = docId;
-
-    wrap.innerHTML = `
-      <div class="msg-top">
-        <strong>${escapeHtml(name || "")}</strong>
-        <span class="msg-time">${escapeHtml(time || "")}</span>
-      </div>
-      <div class="msg-text">${escapeHtml(text || "")}</div>
-      <div class="msg-actions">
-        <button class="reply-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">Reply</button>
-        <button class="view-replies-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">View replies</button>
-        ${isOwn ? `<button class="delete-btn" data-id="${docId}" data-parent="null">Delete</button>` : ""}
-      </div>
-    `;
-    return wrap;
-  }
-
-  function updateMsgEl(el, { name, text, time, isOwn }) {
-    if (!el) return;
-
-    // class own/non-own
-    el.className = `msg ${isOwn ? "own" : ""}`;
-
-    const strong = el.querySelector(".msg-top strong");
-    if (strong) strong.textContent = name || "";
-
-    const t = el.querySelector(".msg-time");
-    if (t) t.textContent = time || "";
-
-    const txt = el.querySelector(".msg-text");
-    if (txt) txt.innerHTML = escapeHtml(text || "");
-
-    // update action buttons dataset text
-    const replyBtn = el.querySelector(".reply-btn");
-    const viewBtn = el.querySelector(".view-replies-btn");
-    if (replyBtn) replyBtn.dataset.text = encodeURIComponent(text || "");
-    if (viewBtn) viewBtn.dataset.text = encodeURIComponent(text || "");
-
-    // ensure delete button exists only if own
-    const actions = el.querySelector(".msg-actions");
-    if (actions) {
-      const del = actions.querySelector(".delete-btn");
-      if (isOwn && !del) {
-        const b = document.createElement("button");
-        b.className = "delete-btn";
-        b.dataset.id = el.dataset.id;
-        b.dataset.parent = "null";
-        b.textContent = "Delete";
-        actions.appendChild(b);
-      }
-      if (!isOwn && del) del.remove();
+  function upsertMessageNode({ container, id, html, sortKey }) {
+    let el = msgNodes.get(id);
+    if (!el) {
+      el = document.createElement("div");
+      el.dataset.id = id;
+      msgNodes.set(id, el);
+      container.appendChild(el);
     }
+    el.dataset.sortKey = String(sortKey || "");
+    el.innerHTML = html;
+  }
+
+  function removeMessageNode(id) {
+    const el = msgNodes.get(id);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    msgNodes.delete(id);
+  }
+
+  function scrollToBottomIfNearBottom(container) {
+    // Only autoscroll if user is already near bottom (prevents jitter)
+    const threshold = 140;
+    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    if (atBottom) container.scrollTop = container.scrollHeight;
   }
 
   function loadChat(name, classId, userId) {
     clearChatListeners();
+    msgNodes.clear();
 
     const chatWelcome = $("chatWelcome");
     const chatSubtitle = $("chatSubtitle");
     const chatStatus = $("chatStatus");
-
     if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
     if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
     if (chatStatus) chatStatus.textContent = "";
@@ -729,8 +552,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const messagesDiv = $("messages");
     const typingDiv = $("typingIndicator");
     const themeToggle = $("themeToggle");
+    const attachBtn = $("attachBtn");
+    const fileInput = $("fileInput");
 
-    // theme toggle
+    // Theme toggle
     if (themeToggle) {
       themeToggle.onclick = () => {
         const screen = $("chat-screen");
@@ -748,206 +573,227 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // announcements (per-class) - small list, OK to re-render
+    // Announcements
     chatUnsubs.push(
-      announcementsCol(classId)
-        .orderBy("timestamp", "asc")
-        .onSnapshot((snap) => {
-          const box = $("announcementsList");
-          if (!box) return;
-          box.innerHTML = "";
-          snap.forEach((doc) => {
-            const a = doc.data() || {};
-            const t = fmtTime(a.timestamp);
-            const div = document.createElement("div");
-            div.innerHTML = `<div style="margin:6px 0;"><strong>[${escapeHtml(t)}]</strong> ${escapeHtml(a.text || "")}</div>`;
-            box.appendChild(div);
-          });
-          if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
-        })
+      announcementsCol(classId).orderBy("timestamp", "asc").onSnapshot((snap) => {
+        const box = $("announcementsList");
+        if (!box) return;
+        box.innerHTML = "";
+        snap.forEach((doc) => {
+          const a = doc.data() || {};
+          const t = a.timestamp && a.timestamp.toDate
+            ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "";
+          const div = document.createElement("div");
+          div.innerHTML = `<div style="margin:6px 0;"><strong>[${t}]</strong> ${escapeHtml(a.text || "")}</div>`;
+          box.appendChild(div);
+        });
+        if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
+      })
     );
 
-    // typing indicator (per-class) - debounce + state-aware writes
+    // Commands listener (force logout / force rules)
+    chatUnsubs.push(
+      commandsDoc(classId).onSnapshot((doc) => {
+        if (!doc.exists) return;
+        const d = doc.data() || {};
+
+        // Force logout
+        if (d.forceLogoutAt) {
+          const lastSeen = Number(localStorage.getItem(`cmdSeen:logout:${classId}:${userId}`) || "0");
+          const t = d.forceLogoutAt.toMillis ? d.forceLogoutAt.toMillis() : Number(d.forceLogoutAt) || 0;
+          if (t && t > lastSeen) {
+            localStorage.setItem(`cmdSeen:logout:${classId}:${userId}`, String(t));
+            clearLS();
+            location.reload();
+          }
+        }
+
+        // Force rules
+        if (d.forceRulesAt) {
+          const lastSeen = Number(localStorage.getItem(`cmdSeen:rules:${classId}:${userId}`) || "0");
+          const t = d.forceRulesAt.toMillis ? d.forceRulesAt.toMillis() : Number(d.forceRulesAt) || 0;
+          if (t && t > lastSeen) {
+            localStorage.setItem(`cmdSeen:rules:${classId}:${userId}`, String(t));
+            clearAcceptedRules(classId, userId);
+            showRulesGate(
+              { classId, userId, userName: name, className: selectedClassName || classId },
+              () => {} // they’re already in chat; after accept they just continue
+            );
+          }
+        }
+      })
+    );
+
+    // Typing indicator
     let typingTimeout = null;
-    let typingDebounce = null;
-    let localTyping = false;
-
-    async function setTyping(val) {
-      if (localTyping === val) return; // avoid spamming
-      localTyping = val;
-      try {
-        await typingDoc(classId).set({ [userId]: val }, { merge: true });
-      } catch {}
-    }
-
     if (msgInput) {
-      msgInput.oninput = () => {
-        // debounce the "true" write
-        if (typingDebounce) clearTimeout(typingDebounce);
-        typingDebounce = setTimeout(() => {
-          setTyping(true);
-        }, 220);
-
+      msgInput.addEventListener("input", () => {
+        typingDoc(classId).set({ [userId]: true }, { merge: true });
         if (typingTimeout) clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => {
-          setTyping(false);
+          typingDoc(classId).set({ [userId]: false }, { merge: true });
         }, 1500);
-      };
+      });
     }
-
-    // best-effort cleanup
-    window.addEventListener("beforeunload", () => {
-      try {
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      } catch {}
-    });
 
     chatUnsubs.push(
       typingDoc(classId).onSnapshot((doc) => {
         if (!typingDiv) return;
-        if (!doc.exists) {
-          typingDiv.textContent = "";
-          return;
-        }
+        if (!doc.exists) return (typingDiv.textContent = "");
         const data = doc.data() || {};
         const othersTyping = Object.entries(data).some(([id, val]) => id !== userId && val === true);
         typingDiv.textContent = othersTyping ? "Someone is typing..." : "";
       })
     );
 
-    // send message (MAIN)
+    async function ensureApprovedOrBlock() {
+      const banDoc = await bannedRef(classId, userId).get();
+      if (banDoc.exists) {
+        if (chatStatus) { chatStatus.textContent = "You are banned."; chatStatus.className = "notice bad"; }
+        return false;
+      }
+      const pDoc = await pendingRef(classId, userId).get();
+      const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
+      if (st !== "approved") {
+        if (chatStatus) {
+          chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
+          chatStatus.className = "notice bad";
+        }
+        return false;
+      }
+      return true;
+    }
+
+    // Send text message
     if (sendBtn && msgInput) {
       sendBtn.onclick = async () => {
         const text = msgInput.value.trim();
         if (!text) return;
+        if (!(await ensureApprovedOrBlock())) return;
 
-        const banDoc = await bannedRef(classId, userId).get();
-        if (banDoc.exists) {
-          if (chatStatus) {
-            chatStatus.textContent = "You are banned.";
-            chatStatus.className = "notice bad";
-          }
-          return;
-        }
-
-        const pDoc = await pendingRef(classId, userId).get();
-        const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-        if (st !== "approved") {
-          if (chatStatus) {
-            chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
-            chatStatus.className = "notice bad";
-          }
-          return;
-        }
-
-        try {
-          await messagesCol(classId).add({
-            name,
-            userId,
-            text,
-            replyTo: null,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-        } catch (e) {
-          console.error(e);
-          if (chatStatus) {
-            chatStatus.textContent = "Failed to send (check rules/quota).";
-            chatStatus.className = "notice bad";
-          }
-          return;
-        }
+        await messagesCol(classId).add({
+          type: "text",
+          name,
+          userId,
+          text,
+          replyTo: null,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        });
 
         msgInput.value = "";
-        setTyping(false);
+        typingDoc(classId).set({ [userId]: false }, { merge: true });
       };
     }
 
-    // ===== LIVE MESSAGES (OPTIMIZED: docChanges, no full re-render) =====
-    const msgEls = new Map(); // docId -> element
+    // Attach button -> choose image
+    if (attachBtn && fileInput) {
+      attachBtn.onclick = async () => {
+        if (!(await ensureApprovedOrBlock())) return;
+        fileInput.value = "";
+        fileInput.click();
+      };
 
-    function clearAllMessages() {
-      msgEls.clear();
-      if (messagesDiv) messagesDiv.innerHTML = "";
+      fileInput.onchange = async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+
+        // only images
+        if (!file.type || !file.type.startsWith("image/")) {
+          if (chatStatus) { chatStatus.textContent = "Only image files are allowed right now."; chatStatus.className = "notice bad"; }
+          return;
+        }
+
+        if (!(await ensureApprovedOrBlock())) return;
+
+        try {
+          if (chatStatus) { chatStatus.textContent = "Uploading image for admin approval…"; chatStatus.className = "notice warn"; }
+
+          const uploadId = "att_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+          const path = `classes/${classId}/pendingAttachments/${uploadId}_${file.name.replace(/[^\w.\-]+/g, "_")}`;
+
+          const storageRef = storage.ref().child(path);
+          await storageRef.put(file, { contentType: file.type });
+
+          await pendingAttachmentsCol(classId).doc(uploadId).set({
+            uploadId,
+            status: "pending", // pending | approved | rejected
+            classId,
+            uploaderId: userId,
+            uploaderName: name,
+            fileName: file.name,
+            contentType: file.type,
+            storagePath: path,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+
+          if (chatStatus) { chatStatus.textContent = "Sent to admin for approval ✅"; chatStatus.className = "notice good"; }
+          setTimeout(() => { if (chatStatus) chatStatus.textContent = ""; }, 2200);
+        } catch (e) {
+          console.error(e);
+          if (chatStatus) { chatStatus.textContent = "Upload failed. Check Storage rules / quota."; chatStatus.className = "notice bad"; }
+        }
+      };
     }
 
-    clearAllMessages();
+    // Live messages optimized (last 200)
+    const q = messagesCol(classId).orderBy("timestamp", "asc").limitToLast(200);
 
     chatUnsubs.push(
-      messagesCol(classId)
-        .orderBy("timestamp", "asc")
-        .onSnapshot(
-          (snap) => {
-            if (!messagesDiv) return;
+      q.onSnapshot((snap) => {
+        if (!messagesDiv) return;
 
-            const shouldStick = isNearBottom(messagesDiv, 160);
+        snap.docChanges().forEach((chg) => {
+          const doc = chg.doc;
+          const m = doc.data() || {};
 
-            const frag = document.createDocumentFragment();
+          // Only main messages in this main list
+          if (m.replyTo !== null) return;
 
-            snap.docChanges().forEach((ch) => {
-              const doc = ch.doc;
-              const m = doc.data() || {};
+          const isOwn = m.userId === userId;
+          const time = m.timestamp && m.timestamp.toDate
+            ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+            : "Sending...";
 
-              // Only main messages
-              if (m.replyTo !== null) return;
-
-              const docId = doc.id;
-
-              if (ch.type === "removed") {
-                const el = msgEls.get(docId);
-                if (el && el.parentNode) el.parentNode.removeChild(el);
-                msgEls.delete(docId);
-                return;
-              }
-
-              const isOwn = m.userId === userId;
-              const time = fmtTime(m.timestamp);
-
-              if (ch.type === "added") {
-                // create + append in order
-                const el = buildMsgEl({
-                  docId,
-                  name: m.name || "",
-                  userId: m.userId || "",
-                  text: m.text || "",
-                  time,
-                  isOwn,
-                });
-                msgEls.set(docId, el);
-                frag.appendChild(el);
-              }
-
-              if (ch.type === "modified") {
-                const el = msgEls.get(docId);
-                if (el) {
-                  updateMsgEl(el, {
-                    name: m.name || "",
-                    text: m.text || "",
-                    time,
-                    isOwn,
-                  });
-                }
-              }
-            });
-
-            // Append any newly added nodes in one paint
-            if (frag.childNodes.length) messagesDiv.appendChild(frag);
-
-            if (shouldStick) {
-              messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-          },
-          (err) => {
-            console.error("Messages listener error:", err);
-            if (chatStatus) {
-              chatStatus.textContent = "Chat stream error (check quota/rules).";
-              chatStatus.className = "notice bad";
-            }
+          let bodyHtml = "";
+          if (m.type === "image" && m.attachmentUrl) {
+            bodyHtml = `
+              <div class="msg-text">${escapeHtml(m.text || "")}</div>
+              <div class="attach-preview"><img src="${m.attachmentUrl}" alt="attachment"></div>
+            `;
+          } else {
+            bodyHtml = `<div class="msg-text">${escapeHtml(m.text || "")}</div>`;
           }
-        )
+
+          const html = `
+            <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
+              <div class="msg-top">
+                <strong>${escapeHtml(m.name || "")}</strong>
+                <span class="msg-time">${time}</span>
+              </div>
+              ${bodyHtml}
+              <div class="msg-actions">
+                <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">Reply</button>
+                <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">View replies</button>
+                ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
+              </div>
+            </div>
+          `;
+
+          if (chg.type === "removed") {
+            removeMessageNode(doc.id);
+          } else {
+            const sortKey = (m.timestamp && m.timestamp.toMillis) ? m.timestamp.toMillis() : Date.now();
+            upsertMessageNode({ container: messagesDiv, id: doc.id, html, sortKey });
+          }
+        });
+
+        scrollToBottomIfNearBottom(messagesDiv);
+      }, (err) => console.error("messages listener error", err))
     );
   }
 
-  // ===== Replies panel (per-class) =====
+  // ===== Replies (kept simple) =====
   function openReplies(parentId, parentText) {
     const classId = localStorage.getItem("classId");
     const userId = localStorage.getItem("userId");
@@ -958,43 +804,36 @@ document.addEventListener("DOMContentLoaded", () => {
     const list = $("replies-list");
     const sendReplyBtn = $("sendReplyBtn");
     const replyInput = $("replyMsgInput");
-
     if (!panel) return;
 
     panel.classList.remove("hidden");
-    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
+    if (title) title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
 
-    const unsub = messagesCol(classId)
-      .orderBy("timestamp", "asc")
-      .onSnapshot((snap) => {
-        if (!list) return;
-
-        const stick = isNearBottom(list, 120);
-        list.innerHTML = "";
-
-        snap.forEach((doc) => {
-          const m = doc.data() || {};
-          if (m.replyTo !== parentId) return;
-
-          const isOwn = m.userId === userId;
-          const time = fmtTime(m.timestamp);
-
-          list.innerHTML += `
-            <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-              <div class="msg-top">
-                <strong>${escapeHtml(m.name || "")}</strong>
-                <span class="msg-time">${escapeHtml(time)}</span>
-              </div>
-              <div class="msg-text">${escapeHtml(m.text || "")}</div>
-              <div class="msg-actions">
-                ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
-              </div>
+    const unsub = messagesCol(classId).orderBy("timestamp", "asc").limitToLast(300).onSnapshot((snap) => {
+      if (!list) return;
+      list.innerHTML = "";
+      snap.forEach((doc) => {
+        const m = doc.data() || {};
+        if (m.replyTo !== parentId) return;
+        const isOwn = m.userId === userId;
+        const time = m.timestamp && m.timestamp.toDate
+          ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "Sending...";
+        list.innerHTML += `
+          <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
+            <div class="msg-top">
+              <strong>${escapeHtml(m.name || "")}</strong>
+              <span class="msg-time">${time}</span>
             </div>
-          `;
-        });
-
-        if (stick) list.scrollTop = list.scrollHeight;
+            <div class="msg-text">${escapeHtml(m.text || "")}</div>
+            <div class="msg-actions">
+              ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
+            </div>
+          </div>
+        `;
       });
+      list.scrollTop = list.scrollHeight;
+    });
 
     if (sendReplyBtn) {
       sendReplyBtn.onclick = async () => {
@@ -1006,6 +845,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (st !== "approved") return;
 
         await messagesCol(classId).add({
+          type: "text",
           name,
           userId,
           text,
@@ -1030,7 +870,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ===== Delete =====
   async function deleteMessage(messageId, parentId) {
     const classId = localStorage.getItem("classId");
     await messagesCol(classId).doc(messageId).delete();
@@ -1046,7 +885,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ===== global click handler =====
+  // Global click handler
   document.addEventListener("click", (e) => {
     const t = e.target;
 

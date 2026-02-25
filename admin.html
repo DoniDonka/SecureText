@@ -9,17 +9,25 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
 
   <style>
     body { font-family: Arial, sans-serif; background:#111; color:#fff; padding:20px; }
     button { padding:6px 12px; border-radius:4px; background:#222; color:#fff; border:1px solid #333; cursor:pointer; }
     button:hover { background:#333; }
+    button.danger { background:#2a1111; border-color:#5a1f1f; }
+    button.danger:hover { background:#3a1414; }
     input { padding:6px; border-radius:4px; border:1px solid #333; background:#0e0e0e; color:#fff; }
     table { width:100%; border-collapse:collapse; margin:10px 0; }
     th, td { border:1px solid #333; padding:6px; }
     th { background:#1b1b1b; }
     #chatMessages { height:300px; overflow-y:auto; border:1px solid #333; padding:10px; }
-    .msg { margin-bottom:6px; }
+    .msg { margin-bottom:10px; padding:8px; border:1px solid rgba(255,255,255,.08); border-radius:8px; background: rgba(255,255,255,.04); }
+    .msgTop { display:flex; justify-content:space-between; gap:10px; opacity:.9; }
+    .muted { opacity:.7; font-size:12px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; }
+    .card { border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:12px; background: rgba(255,255,255,.03); margin-top:12px; }
+    img.preview { max-width: 260px; border-radius:10px; border:1px solid rgba(255,255,255,.10); display:block; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -45,6 +53,17 @@
     <div id="admin-screen" style="display:none;">
       <h2 id="classTitle"></h2>
 
+      <div class="card">
+        <h3>Class Controls</h3>
+        <div class="row">
+          <button id="forceRulesBtn">Force Rules Re-Accept (Everyone)</button>
+          <button id="forceLogoutBtn" class="danger">Force Logout Everyone</button>
+          <button id="deleteAllChatBtn" class="danger">Delete ALL Chat</button>
+          <button id="deleteAllAnnouncementsBtn" class="danger">Delete ALL Announcements</button>
+        </div>
+        <p id="adminActionStatus" class="muted"></p>
+      </div>
+
       <h3>Pending Users</h3>
       <table id="pendingUsersTable">
         <thead>
@@ -59,9 +78,16 @@
         <tbody></tbody>
       </table>
 
+      <div class="card">
+        <h3>Pending Attachments (Image Approval)</h3>
+        <div id="pendingAttachments"></div>
+      </div>
+
       <h3>Announcements</h3>
-      <input id="announcementInput" type="text" placeholder="Announcement text">
-      <button id="announceBtn">Send</button>
+      <div class="row">
+        <input id="announcementInput" type="text" placeholder="Announcement text" style="flex:1; min-width:260px;">
+        <button id="announceBtn">Send</button>
+      </div>
       <div id="announcementsList" style="margin-top:10px;"></div>
 
       <h3>Live Chat</h3>
