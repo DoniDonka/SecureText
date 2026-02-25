@@ -1,906 +1,677 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const $ = (id) => document.getElementById(id);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureText</title>
 
-  const screens = {
-    class: $("screen-class"),
-    pin: $("screen-pin"),
-    name: $("screen-name"),
-    wait: $("screen-wait"),
-    chat: $("screen-chat"),
-  };
+  <link rel="stylesheet" href="style.css" />
 
-  const legacyFullScreens = ["name-screen", "waiting-screen", "chat-screen"];
+  <!-- Firebase v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 
-  function hardHideEl(el) {
-    if (!el) return;
-    el.classList.remove("active");
-    el.style.display = "none";
-    el.style.opacity = "0";
-    el.style.pointerEvents = "none";
-    el.style.visibility = "hidden";
-  }
-
-  function hardShowEl(el) {
-    if (!el) return;
-    el.classList.add("active");
-    el.style.display = "block";
-    el.style.opacity = "1";
-    el.style.pointerEvents = "auto";
-    el.style.visibility = "visible";
-  }
-
-  function showScreen(key) {
-    Object.values(screens).forEach((el) => hardHideEl(el));
-    legacyFullScreens.forEach((id) => {
-      const el = $(id);
-      if (id === "chat-screen") return;
-      if (el) hardHideEl(el);
-    });
-    hardShowEl(screens[key]);
-
-    // admin path button ONLY on class select
-    const adminBtn = $("adminPathBtn");
-    if (adminBtn) adminBtn.style.display = key === "class" ? "block" : "none";
-  }
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  function setLS(obj) {
-    Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, String(v)));
-  }
-
-  function clearLS() {
-    localStorage.removeItem("classId");
-    localStorage.removeItem("className");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("userName");
-  }
-
-  function classDocRef(classId) {
-    return db.collection("classes").doc(classId);
-  }
-  function pendingRef(classId, userId) {
-    return classDocRef(classId).collection("pendingUsers").doc(userId);
-  }
-  function bannedRef(classId, userId) {
-    return classDocRef(classId).collection("bannedUsers").doc(userId);
-  }
-  function messagesCol(classId) {
-    return classDocRef(classId).collection("messages");
-  }
-  function announcementsCol(classId) {
-    return classDocRef(classId).collection("announcements");
-  }
-  function typingDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("typing");
-  }
-  function commandsDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("commands");
-  }
-  function pendingAttachmentsCol(classId) {
-    return classDocRef(classId).collection("pendingAttachments");
-  }
-
-  // ===== RULES GATE =====
-  function rulesKey(classId, userId) {
-    return `rulesAccepted:${classId}:${userId}`;
-  }
-  function hasAcceptedRules(classId, userId) {
-    return localStorage.getItem(rulesKey(classId, userId)) === "true";
-  }
-  function setAcceptedRules(classId, userId) {
-    localStorage.setItem(rulesKey(classId, userId), "true");
-  }
-  function clearAcceptedRules(classId, userId) {
-    localStorage.removeItem(rulesKey(classId, userId));
-  }
-
-  function showRulesGate({ classId, userId, userName, className }, onContinue) {
-    if (hasAcceptedRules(classId, userId)) {
-      onContinue();
-      return;
+  <style>
+    /* =========================
+       BASE + NO OUTER SCROLL
+       ========================= */
+    html, body { height: 100%; margin: 0; }
+    body{
+      background:
+        radial-gradient(900px 500px at 20% 10%, rgba(80,140,255,.12), transparent 60%),
+        radial-gradient(800px 500px at 80% 20%, rgba(60,255,160,.10), transparent 55%),
+        radial-gradient(900px 700px at 50% 85%, rgba(255,255,255,.06), transparent 60%),
+        #070a0f;
+      color: rgba(255,255,255,.92);
+      overflow: hidden; /* KEY: prevent page scrollbar */
+      font-family: Arial, sans-serif;
     }
 
-    const root = $("root") || document.body;
-    const old = document.getElementById("rulesGateOverlay");
-    if (old) old.remove();
+    /* FULLSCREEN ROOT (no padding = true stretch) */
+    #root{
+      position: relative;
+      height: 100vh;
+      width: 100%;
+      padding: 0;              /* KEY: remove boxing */
+      box-sizing: border-box;
+      overflow: hidden;
+    }
 
-    const overlay = document.createElement("div");
-    overlay.id = "rulesGateOverlay";
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.zIndex = "99999";
-    overlay.style.display = "grid";
-    overlay.style.placeItems = "center";
-    overlay.style.padding = "16px";
-    overlay.style.background =
-      "radial-gradient(1200px 700px at 20% 10%, rgba(255,90,90,.10), transparent 60%)," +
-      "radial-gradient(900px 600px at 85% 20%, rgba(255,211,107,.10), transparent 55%)," +
-      "rgba(0,0,0,.78)";
-    overlay.style.backdropFilter = "blur(10px)";
-    overlay.style.pointerEvents = "all";
+    /* =========================
+       ADMIN PATH BUTTON
+       (NOW ONLY EXISTS IN CLASS SCREEN HTML)
+       ========================= */
+    .admin-path-btn{
+      position:absolute;
+      top: 15px;
+      right: 20px;
+      padding: 8px 14px;
+      background: rgba(0,0,0,.35);
+      color: white;
+      border: 1px solid rgba(255,255,255,.14);
+      font-size: 13px;
+      cursor: pointer;
+      transition: 0.2s;
+      z-index: 50;
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+    .admin-path-btn:hover{ background: rgba(0,0,0,.5); transform: translateY(-1px); }
+    .admin-path-btn:active{ transform: translateY(0); opacity: .95; }
 
-    const card = document.createElement("div");
-    card.style.width = "min(860px, 96vw)";
-    card.style.borderRadius = "18px";
-    card.style.border = "1px solid rgba(255,255,255,.12)";
-    card.style.background = "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
-    card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
-    card.style.padding = "22px 22px 18px 22px";
-    card.style.position = "relative";
-    card.style.overflow = "hidden";
+    /* =========================
+       SCREEN VISIBILITY
+       ========================= */
+    .screen{ display:none; opacity:0; transform: translateY(10px); }
+    .screen.active{
+      display:block;
+      opacity:1;
+      transform: translateY(0);
+      transition: opacity .22s ease, transform .22s ease;
+    }
 
-    const title = document.createElement("div");
-    title.style.position = "relative";
-    title.style.zIndex = "2";
-    title.style.display = "flex";
-    title.style.alignItems = "center";
-    title.style.justifyContent = "space-between";
-    title.style.gap = "12px";
+    /* =========================
+       MODERN ENTRY UI
+       ========================= */
+    :root{
+      --glass: rgba(18,18,18,.55);
+      --glass2: rgba(18,18,18,.35);
+      --border: rgba(255,255,255,.08);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.65);
+      --accent: rgba(68, 255, 160, .9);
+      --danger: rgba(255, 90, 90, .95);
+      --warn: rgba(255, 211, 107, .95);
+      --shadow: 0 24px 70px rgba(0,0,0,.55);
+    }
 
-    title.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div style="
-          width:46px;height:46px;border-radius:14px;
-          background: rgba(255,255,255,.06);
-          border: 1px solid rgba(255,255,255,.10);
-          display:grid;place-items:center;
-          box-shadow: 0 12px 35px rgba(0,0,0,.45);
-          font-weight:900;letter-spacing:.6px;
-        ">!</div>
-        <div>
-          <div style="font-size:22px;font-weight:900;letter-spacing:.4px;">Rules & Conduct Agreement</div>
-          <div style="margin-top:4px;font-size:12px;opacity:.74;">
-            Class: <strong>${escapeHtml(className || classId)}</strong> • User: <strong>${escapeHtml(userName || "")}</strong>
+    #screen-class, #screen-pin, #screen-name, #screen-wait{
+      height: 100%;
+      display:grid;
+      place-items:center;
+      padding: 14px;
+      box-sizing: border-box;
+      overflow:hidden;
+    }
+
+    .entry-card{
+      width: min(760px, 92vw);
+      background: linear-gradient(180deg, var(--glass), var(--glass2));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 26px 24px;
+      position: relative;
+      overflow: hidden;
+      animation: cardIn .38s ease;
+      transform-origin:center;
+    }
+    .entry-card::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background:
+        radial-gradient(500px 220px at 30% 0%, rgba(80,140,255,.22), transparent 60%),
+        radial-gradient(500px 220px at 70% 0%, rgba(60,255,160,.18), transparent 60%);
+      filter: blur(10px);
+      opacity: .55;
+      pointer-events:none;
+    }
+    @keyframes cardIn{
+      from{ opacity:0; transform: translateY(14px) scale(.985); }
+      to{ opacity:1; transform: translateY(0) scale(1); }
+    }
+
+    .entry-top{
+      position: relative;
+      z-index:1;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    .brand{ display:flex; align-items:center; gap:10px; }
+    .brand-badge{
+      width:38px; height:38px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid var(--border);
+      display:grid;
+      place-items:center;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      position: relative;
+      overflow:hidden;
+    }
+    .brand-badge::after{
+      content:"";
+      position:absolute;
+      inset:-30%;
+      background: conic-gradient(from 180deg, rgba(60,255,160,.0), rgba(60,255,160,.25), rgba(80,140,255,.25), rgba(60,255,160,.0));
+      animation: spin 3.5s linear infinite;
+      opacity:.85;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg);} }
+    .brand-badge span{ position:relative; z-index:2; font-weight:900; opacity:.95; letter-spacing:.6px; }
+
+    .entry-title{ position:relative; z-index:1; font-size: 28px; margin:0; line-height:1.15; }
+    .entry-sub{ position:relative; z-index:1; margin:6px 0 0 0; color: var(--muted); font-size: 14px; }
+
+    .btn{
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor:pointer;
+      transition: transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease;
+    }
+    .btn:hover{ transform: translateY(-1px); filter: brightness(1.05); background: rgba(255,255,255,.08); }
+    .btn:active{ transform: translateY(0); opacity: .95; }
+    .btn.primary{
+      background: rgba(60,255,160,.14);
+      border-color: rgba(60,255,160,.28);
+    }
+    .btn.ghost{ background: transparent; }
+
+    .entry-form{ position:relative; z-index:1; margin-top:18px; display:grid; gap:12px; }
+    .field{ display:grid; gap:8px; }
+    .label{ font-size:12px; color: var(--muted); }
+    .input{
+      width:100%;
+      padding:12px 14px;
+      border-radius:12px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid var(--border);
+      color: var(--text);
+      outline:none;
+      box-sizing:border-box;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+    .input:focus{
+      transform: translateY(-1px);
+      border-color: rgba(80,140,255,.35);
+      background: rgba(0,0,0,.45);
+    }
+
+    .classes-wrap{
+      position: relative;
+      z-index:1;
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .class-tile{
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.05);
+      border-radius: 16px;
+      padding: 14px 14px;
+      cursor:pointer;
+      transition: transform .14s ease, background .14s ease, border-color .14s ease;
+      animation: tileIn .28s ease;
+    }
+    @keyframes tileIn{
+      from{ opacity:0; transform: translateY(8px); }
+      to{ opacity:1; transform: translateY(0); }
+    }
+    .class-tile:hover{
+      transform: translateY(-2px);
+      background: rgba(255,255,255,.07);
+      border-color: rgba(255,255,255,.14);
+    }
+    .class-name{ font-weight: 800; margin:0; font-size: 15px; }
+    .class-meta{ margin: 6px 0 0 0; font-size: 12px; color: var(--muted); }
+
+    .notice{ margin-top: 10px; position:relative; z-index:1; }
+    .notice.bad{ color: var(--danger); }
+    .notice.warn{ color: var(--warn); }
+    .notice.good{ color: var(--accent); }
+
+    @media(max-width:720px){
+      .classes-wrap{ grid-template-columns: 1fr; }
+    }
+
+    /* =========================
+       FULLSCREEN CHAT (stretched)
+       ========================= */
+    #screen-chat{ height: 100%; overflow:hidden; }
+
+    /* IMPORTANT: full width, no max-width, no margin */
+    #chat-screen{
+      height: 100%;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      display:flex;
+      flex-direction: column;
+      overflow:hidden;
+      border-radius: 0; /* fullscreen edge-to-edge */
+    }
+
+    /* Messages is the ONLY scroll area */
+    #messages.messages{
+      flex: 1 1 auto;
+      min-height: 0;      /* KEY for flex scrolling */
+      overflow-y:auto;
+      margin: 10px 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.12);
+      border: 1px solid rgba(255,255,255,0.06);
+      scroll-behavior: smooth;
+    }
+
+    #announcementsBox{
+      flex: 0 0 auto;
+      margin: 10px 14px 0 14px;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    #announcementsList{
+      max-height: 90px;
+      overflow-y:auto;
+      margin-top: 8px;
+    }
+
+    #typingIndicator{
+      flex: 0 0 auto;
+      margin: 0 14px 8px 14px !important;
+      opacity: .85;
+      font-style: italic;
+    }
+
+    #chat-input{
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 10px 14px 14px 14px;
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      background: rgba(0,0,0,0.35);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    #msgInput{ flex:1; min-width:0; padding: 12px 14px; border-radius:12px; }
+    #sendBtn{ padding: 11px 16px; border-radius:12px; }
+
+    /* Message pop animation */
+    .msg, .reply-msg{
+      animation: msgIn 160ms ease;
+      transform-origin: bottom;
+    }
+    @keyframes msgIn{
+      from{ opacity:0; transform: translateY(6px) scale(.995); }
+      to{ opacity:1; transform: translateY(0) scale(1); }
+    }
+
+    /* =========================
+       INTRO OVERLAY + CONFETTI
+       FIXED: cannot block anything once hidden
+       ========================= */
+    .intro-overlay{
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display:grid;
+      place-items:center;
+      background:
+        radial-gradient(900px 500px at 20% 10%, rgba(80,140,255,.14), transparent 60%),
+        radial-gradient(800px 500px at 80% 20%, rgba(60,255,160,.12), transparent 55%),
+        rgba(0,0,0,.75);
+      backdrop-filter: blur(10px);
+      opacity: 1;
+      pointer-events: all;
+      transition: opacity .35s ease, transform .35s ease;
+    }
+    .intro-overlay.hidden{
+      opacity: 0;
+      pointer-events: none;     /* KEY */
+      visibility: hidden;       /* KEY */
+      transform: translateY(-8px);
+    }
+
+    .intro-card{
+      width: min(560px, 92vw);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: linear-gradient(180deg, rgba(18,18,18,.68), rgba(18,18,18,.42));
+      box-shadow: 0 30px 90px rgba(0,0,0,.55);
+      padding: 22px 22px 18px 22px;
+      position: relative;
+      overflow:hidden;
+      animation: introPop .45s ease;
+    }
+    @keyframes introPop{
+      from{ opacity:0; transform: translateY(14px) scale(.98); }
+      to{ opacity:1; transform: translateY(0) scale(1); }
+    }
+    .intro-card::before{
+      content:"";
+      position:absolute;
+      inset:-40%;
+      background: conic-gradient(from 180deg,
+        rgba(60,255,160,.00),
+        rgba(60,255,160,.18),
+        rgba(80,140,255,.18),
+        rgba(60,255,160,.00));
+      animation: introSpin 4.2s linear infinite;
+      opacity:.8;
+    }
+    @keyframes introSpin{ to{ transform: rotate(360deg); } }
+
+    .intro-logo{ position:relative; z-index:2; display:flex; align-items:center; gap:12px; }
+    .intro-badge{
+      width: 46px; height: 46px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.10);
+      display:grid;
+      place-items:center;
+      box-shadow: 0 12px 35px rgba(0,0,0,.4);
+      overflow:hidden;
+    }
+    .intro-badge span{ font-weight: 900; letter-spacing:.6px; opacity:.95; }
+    .intro-name{ font-size: 22px; font-weight: 900; letter-spacing:.4px; }
+    .intro-tag{ margin-top:4px; font-size: 12px; opacity:.72; }
+
+    .intro-bar{
+      position:relative;
+      z-index:2;
+      margin-top: 16px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      overflow:hidden;
+    }
+    .intro-bar-fill{
+      height:100%;
+      width:35%;
+      border-radius:999px;
+      background: linear-gradient(90deg, rgba(60,255,160,.85), rgba(80,140,255,.85));
+      animation: introLoad 1.25s ease-in-out infinite;
+    }
+    @keyframes introLoad{
+      0%{ transform: translateX(-30%); width: 30%; opacity:.8; }
+      50%{ transform: translateX(80%); width: 45%; opacity:1; }
+      100%{ transform: translateX(-30%); width: 30%; opacity:.8; }
+    }
+    .intro-hint{ position:relative; z-index:2; margin-top:10px; font-size:12px; opacity:.7; }
+
+    .confetti-canvas{
+      position: fixed;
+      inset:0;
+      z-index: 9998;
+      pointer-events:none;
+      opacity:0;
+      transition: opacity .2s ease;
+    }
+    .confetti-canvas.on{ opacity:1; }
+
+    .welcome-glow{ animation: welcomeGlow 650ms ease; }
+    @keyframes welcomeGlow{
+      from{ text-shadow:0 0 0 rgba(60,255,160,0); transform: translateY(6px); opacity:0; }
+      to{ text-shadow:0 0 22px rgba(60,255,160,.10); transform: translateY(0); opacity:1; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+
+    <!-- INTRO OVERLAY -->
+    <div id="introOverlay" class="intro-overlay">
+      <div class="intro-card">
+        <div class="intro-logo">
+          <div class="intro-badge"><span>ST</span></div>
+          <div>
+            <div class="intro-name">SecureText</div>
+            <div class="intro-tag">Private class chat • Smooth • Modern</div>
           </div>
         </div>
+        <div class="intro-bar"><div class="intro-bar-fill"></div></div>
+        <div class="intro-hint" id="introHint">Loading…</div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-size:12px;opacity:.78;">Approved ✅</div>
-        <div id="rulesDelayText" style="margin-top:3px;font-size:12px;opacity:.78;">Security delay: 30s</div>
-      </div>
-    `;
-
-    const box = document.createElement("div");
-    box.style.position = "relative";
-    box.style.zIndex = "2";
-    box.style.marginTop = "14px";
-    box.style.border = "1px solid rgba(255,255,255,.10)";
-    box.style.borderRadius = "16px";
-    box.style.background = "rgba(0,0,0,.30)";
-    box.style.padding = "14px 14px";
-    box.style.lineHeight = "1.4";
-    box.innerHTML = `
-      <div style="font-weight:900;letter-spacing:.2px;margin-bottom:10px;">Read carefully. These rules are enforced.</div>
-      <div style="display:grid;gap:8px;font-size:14px;">
-        <div>• <strong>No cursing / harassment.</strong></div>
-        <div>• <strong>No racial slurs</strong> or hate speech (instant ban).</div>
-        <div>• <strong>No threats</strong>, doxxing, or personal info.</div>
-        <div>• <strong>No spam</strong> or flooding chat.</div>
-        <div>• <strong>Respect admins</strong> and class members.</div>
-      </div>
-      <div style="margin-top:12px;font-size:12px;opacity:.78;">
-        Breaking rules may result in <strong>rejection</strong> or a <strong>ban</strong> without warning.
-      </div>
-    `;
-
-    const controls = document.createElement("div");
-    controls.style.position = "relative";
-    controls.style.zIndex = "2";
-    controls.style.marginTop = "14px";
-    controls.style.display = "grid";
-    controls.style.gap = "10px";
-
-    const checkWrap = document.createElement("label");
-    checkWrap.style.display = "flex";
-    checkWrap.style.alignItems = "center";
-    checkWrap.style.gap = "10px";
-    checkWrap.style.userSelect = "none";
-    checkWrap.style.cursor = "pointer";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.style.transform = "scale(1.15)";
-    checkbox.style.cursor = "pointer";
-
-    const checkText = document.createElement("div");
-    checkText.innerHTML = `
-      <div style="font-size:13px;"><strong>I understand</strong> and will follow the rules above.</div>
-      <div style="font-size:12px;opacity:.72;">You must accept to enter chat.</div>
-    `;
-
-    checkWrap.appendChild(checkbox);
-    checkWrap.appendChild(checkText);
-
-    const btn = document.createElement("button");
-    btn.textContent = "I Understand";
-    btn.disabled = true;
-    btn.style.border = "1px solid rgba(255,255,255,.14)";
-    btn.style.background = "rgba(255,255,255,.06)";
-    btn.style.color = "rgba(255,255,255,.92)";
-    btn.style.padding = "10px 14px";
-    btn.style.borderRadius = "12px";
-    btn.style.cursor = "not-allowed";
-
-    const lockedNote = document.createElement("div");
-    lockedNote.style.marginTop = "6px";
-    lockedNote.style.fontSize = "12px";
-    lockedNote.style.opacity = "0.78";
-    lockedNote.textContent = "Please wait…";
-
-    controls.appendChild(checkWrap);
-    controls.appendChild(btn);
-    controls.appendChild(lockedNote);
-
-    card.appendChild(title);
-    card.appendChild(box);
-    card.appendChild(controls);
-    overlay.appendChild(card);
-    root.appendChild(overlay);
-
-    let delayLeft = 30;
-    let lockLeft = 10;
-
-    const delayEl = document.getElementById("rulesDelayText");
-    const tick = () => {
-      if (delayEl) delayEl.textContent = `Security delay: ${delayLeft}s`;
-
-      if (lockLeft > 0) lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
-      else lockedNote.textContent = checkbox.checked ? "You may continue." : "Check the box to continue.";
-
-      const canClick = delayLeft <= 0 && lockLeft <= 0 && checkbox.checked;
-      btn.disabled = !canClick;
-      btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
-      btn.style.background = btn.disabled ? "rgba(255,255,255,.06)" : "rgba(60,255,160,.14)";
-      btn.style.borderColor = btn.disabled ? "rgba(255,255,255,.14)" : "rgba(60,255,160,.28)";
-    };
-
-    const interval = setInterval(() => {
-      if (delayLeft > 0) delayLeft--;
-      if (lockLeft > 0) lockLeft--;
-      tick();
-    }, 1000);
-
-    checkbox.addEventListener("change", tick);
-    tick();
-
-    btn.onclick = () => {
-      if (btn.disabled) return;
-      try { clearInterval(interval); } catch {}
-      setAcceptedRules(classId, userId);
-
-      overlay.style.opacity = "0";
-      overlay.style.transition = "opacity .18s ease";
-      overlay.style.pointerEvents = "none";
-      setTimeout(() => {
-        try { overlay.remove(); } catch {}
-        onContinue();
-      }, 180);
-    };
-  }
-
-  // ===== state =====
-  let selectedClassId = null;
-  let selectedClassName = null;
-
-  // ===== restore session =====
-  const savedClassId = localStorage.getItem("classId");
-  const savedUserId = localStorage.getItem("userId");
-  const savedUserName = localStorage.getItem("userName");
-  const savedClassName = localStorage.getItem("className");
-
-  if (savedClassId && savedUserId && savedUserName) {
-    selectedClassId = savedClassId;
-    selectedClassName = savedClassName || savedClassId;
-    restoreFlow(savedClassId, savedUserId, savedUserName);
-  } else {
-    loadClasses();
-    showScreen("class");
-  }
-
-  // ===== UI events =====
-  const pinBackBtn = $("pinBackBtn");
-  if (pinBackBtn) pinBackBtn.onclick = () => { $("pinInput").value = ""; $("pinError").textContent = ""; showScreen("class"); };
-
-  const nameBackBtn = $("nameBackBtn");
-  if (nameBackBtn) nameBackBtn.onclick = () => { $("nameInput").value = ""; $("nameError").textContent = ""; showScreen("pin"); };
-
-  const resetBtn = $("resetBtn");
-  if (resetBtn) resetBtn.onclick = () => { clearLS(); location.reload(); };
-
-  const logoutBtn = $("logoutBtn");
-  if (logoutBtn) logoutBtn.onclick = () => { clearLS(); location.reload(); };
-
-  // ===== load classes =====
-  function loadClasses() {
-    const classesWrap = $("classes");
-    const err = $("classError");
-    if (!classesWrap) return;
-
-    classesWrap.innerHTML = "Loading classes...";
-    if (err) err.textContent = "";
-
-    db.collection("classes").get()
-      .then((snap) => {
-        classesWrap.innerHTML = "";
-        if (snap.empty) {
-          if (err) err.textContent = "No classes found in Firestore (collection must be named 'classes').";
-          return;
-        }
-
-        snap.forEach((doc) => {
-          const data = doc.data() || {};
-          const btn = document.createElement("button");
-          btn.className = "class-btn";
-          btn.type = "button";
-          btn.textContent = data.name || doc.id;
-
-          btn.onclick = () => {
-            selectedClassId = doc.id;
-            selectedClassName = data.name || doc.id;
-            const pinClassName = $("pinClassName");
-            if (pinClassName) pinClassName.textContent = selectedClassName;
-            $("pinError").textContent = "";
-            $("pinInput").value = "";
-            showScreen("pin");
-          };
-
-          classesWrap.appendChild(btn);
-        });
-      })
-      .catch((e) => {
-        if (err) err.textContent = "Failed to load classes. Check Firestore rules + config.";
-        console.error(e);
-      });
-  }
-
-  // ===== PIN verify =====
-  const pinContinueBtn = $("pinContinueBtn");
-  if (pinContinueBtn) {
-    pinContinueBtn.onclick = async () => {
-      const pin = $("pinInput").value.trim();
-      if (!selectedClassId) return ($("pinError").textContent = "No class selected.");
-      if (!pin) return ($("pinError").textContent = "Enter a PIN.");
-
-      try {
-        const clsDoc = await classDocRef(selectedClassId).get();
-        if (!clsDoc.exists) return ($("pinError").textContent = "Class not found.");
-
-        const data = clsDoc.data() || {};
-        if (String(data.pin || "") !== pin) return ($("pinError").textContent = "Wrong PIN!");
-
-        $("pinError").textContent = "";
-        $("nameError").textContent = "";
-        $("nameInput").value = "";
-        showScreen("name");
-      } catch (e) {
-        console.error(e);
-        $("pinError").textContent = "PIN check failed. Check Firestore rules.";
-      }
-    };
-  }
-
-  // ===== create pending user =====
-  const nameContinueBtn = $("nameContinueBtn");
-  if (nameContinueBtn) {
-    nameContinueBtn.onclick = async () => {
-      const name = $("nameInput").value.trim();
-      if (!selectedClassId) return ($("nameError").textContent = "No class selected.");
-      if (!name) return ($("nameError").textContent = "Enter a name.");
-
-      const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-      try {
-        const bannedDoc = await bannedRef(selectedClassId, userId).get();
-        if (bannedDoc.exists) return showDenied("You are banned from this class.");
-
-        await pendingRef(selectedClassId, userId).set({
-          name,
-          userId,
-          classId: selectedClassId,
-          className: selectedClassName || selectedClassId,
-          status: "pending",
-          approved: false,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-
-        setLS({
-          classId: selectedClassId,
-          className: selectedClassName || selectedClassId,
-          userId,
-          userName: name,
-        });
-
-        showWaiting(name, selectedClassId);
-        watchStatus(selectedClassId, userId, name);
-      } catch (e) {
-        console.error(e);
-        $("nameError").textContent = "Failed to submit. Check Firestore rules.";
-      }
-    };
-  }
-
-  function showWaiting(name, classId) {
-    const waitText = $("waitText");
-    const waitStatus = $("waitStatus");
-    if (waitText) waitText.textContent = `${name}, you requested access to ${selectedClassName || classId}.`;
-    if (waitStatus) { waitStatus.textContent = ""; waitStatus.className = "notice"; }
-    showScreen("wait");
-  }
-
-  function showDenied(msg) {
-    const waitText = $("waitText");
-    const waitStatus = $("waitStatus");
-    if (waitText) waitText.textContent = "Access blocked.";
-    if (waitStatus) { waitStatus.textContent = msg; waitStatus.className = "notice bad"; }
-    showScreen("wait");
-  }
-
-  async function restoreFlow(classId, userId, name) {
-    try {
-      const banDoc = await bannedRef(classId, userId).get();
-      if (banDoc.exists) return showDenied("You are banned from this class.");
-
-      const pDoc = await pendingRef(classId, userId).get();
-      if (!pDoc.exists) {
-        clearLS();
-        loadClasses();
-        showScreen("class");
-        return;
-      }
-
-      const data = pDoc.data() || {};
-      const status = data.status || (data.approved ? "approved" : "pending");
-
-      if (status === "approved") {
-        showRulesGate(
-          { classId, userId, userName: name, className: selectedClassName || data.className || classId },
-          () => loadChat(name, classId, userId)
-        );
-      } else if (status === "rejected") showDenied("You were rejected by the admin.");
-      else if (status === "banned") showDenied("You are banned from this class.");
-      else {
-        showWaiting(name, classId);
-        watchStatus(classId, userId, name);
-      }
-    } catch (e) {
-      console.error(e);
-      showWaiting(name, classId);
-      watchStatus(classId, userId, name);
-    }
-  }
-
-  function watchStatus(classId, userId, name) {
-    pendingRef(classId, userId).onSnapshot((doc) => {
-      if (!doc.exists) return showDenied("Your request was removed (denied).");
-
-      const data = doc.data() || {};
-      const status = data.status || (data.approved ? "approved" : "pending");
-
-      if (status === "approved") {
-        showRulesGate(
-          { classId, userId, userName: name, className: selectedClassName || data.className || classId },
-          () => loadChat(name, classId, userId)
-        );
-      } else if (status === "rejected") showDenied("You were rejected by the admin.");
-      else if (status === "banned") showDenied("You are banned from this class.");
-      else {
-        const waitStatus = $("waitStatus");
-        if (waitStatus) { waitStatus.textContent = "Pending approval..."; waitStatus.className = "notice warn"; }
-      }
-    });
-
-    bannedRef(classId, userId).onSnapshot((doc) => {
-      if (doc.exists) showDenied("You are banned from this class.");
-    });
-  }
-
-  // ===== CHAT (optimized rendering) =====
-  let chatUnsubs = [];
-  function clearChatListeners() {
-    chatUnsubs.forEach((u) => { try { u(); } catch {} });
-    chatUnsubs = [];
-  }
-
-  // DOM cache for messages to prevent flashing
-  const msgNodes = new Map(); // messageId -> element
-
-  function upsertMessageNode({ container, id, html, sortKey }) {
-    let el = msgNodes.get(id);
-    if (!el) {
-      el = document.createElement("div");
-      el.dataset.id = id;
-      msgNodes.set(id, el);
-      container.appendChild(el);
-    }
-    el.dataset.sortKey = String(sortKey || "");
-    el.innerHTML = html;
-  }
-
-  function removeMessageNode(id) {
-    const el = msgNodes.get(id);
-    if (el && el.parentNode) el.parentNode.removeChild(el);
-    msgNodes.delete(id);
-  }
-
-  function scrollToBottomIfNearBottom(container) {
-    // Only autoscroll if user is already near bottom (prevents jitter)
-    const threshold = 140;
-    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-    if (atBottom) container.scrollTop = container.scrollHeight;
-  }
-
-  function loadChat(name, classId, userId) {
-    clearChatListeners();
-    msgNodes.clear();
-
-    const chatWelcome = $("chatWelcome");
-    const chatSubtitle = $("chatSubtitle");
-    const chatStatus = $("chatStatus");
-    if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
-    if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
-    if (chatStatus) chatStatus.textContent = "";
-
-    showScreen("chat");
-
-    const msgInput = $("msgInput");
-    const sendBtn = $("sendBtn");
-    const messagesDiv = $("messages");
-    const typingDiv = $("typingIndicator");
-    const themeToggle = $("themeToggle");
-    const attachBtn = $("attachBtn");
-    const fileInput = $("fileInput");
-
-    // Theme toggle
-    if (themeToggle) {
-      themeToggle.onclick = () => {
-        const screen = $("chat-screen");
-        if (!screen) return;
-        const isDay = screen.classList.contains("day");
-        if (isDay) {
-          screen.classList.remove("day");
-          screen.classList.add("night");
-          themeToggle.textContent = "🌙";
-        } else {
-          screen.classList.remove("night");
-          screen.classList.add("day");
-          themeToggle.textContent = "☀️";
-        }
-      };
-    }
-
-    // Announcements
-    chatUnsubs.push(
-      announcementsCol(classId).orderBy("timestamp", "asc").onSnapshot((snap) => {
-        const box = $("announcementsList");
-        if (!box) return;
-        box.innerHTML = "";
-        snap.forEach((doc) => {
-          const a = doc.data() || {};
-          const t = a.timestamp && a.timestamp.toDate
-            ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-            : "";
-          const div = document.createElement("div");
-          div.innerHTML = `<div style="margin:6px 0;"><strong>[${t}]</strong> ${escapeHtml(a.text || "")}</div>`;
-          box.appendChild(div);
-        });
-        if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
-      })
-    );
-
-    // Commands listener (force logout / force rules)
-    chatUnsubs.push(
-      commandsDoc(classId).onSnapshot((doc) => {
-        if (!doc.exists) return;
-        const d = doc.data() || {};
-
-        // Force logout
-        if (d.forceLogoutAt) {
-          const lastSeen = Number(localStorage.getItem(`cmdSeen:logout:${classId}:${userId}`) || "0");
-          const t = d.forceLogoutAt.toMillis ? d.forceLogoutAt.toMillis() : Number(d.forceLogoutAt) || 0;
-          if (t && t > lastSeen) {
-            localStorage.setItem(`cmdSeen:logout:${classId}:${userId}`, String(t));
-            clearLS();
-            location.reload();
-          }
-        }
-
-        // Force rules
-        if (d.forceRulesAt) {
-          const lastSeen = Number(localStorage.getItem(`cmdSeen:rules:${classId}:${userId}`) || "0");
-          const t = d.forceRulesAt.toMillis ? d.forceRulesAt.toMillis() : Number(d.forceRulesAt) || 0;
-          if (t && t > lastSeen) {
-            localStorage.setItem(`cmdSeen:rules:${classId}:${userId}`, String(t));
-            clearAcceptedRules(classId, userId);
-            showRulesGate(
-              { classId, userId, userName: name, className: selectedClassName || classId },
-              () => {} // they’re already in chat; after accept they just continue
-            );
-          }
-        }
-      })
-    );
-
-    // Typing indicator
-    let typingTimeout = null;
-    if (msgInput) {
-      msgInput.addEventListener("input", () => {
-        typingDoc(classId).set({ [userId]: true }, { merge: true });
-        if (typingTimeout) clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-          typingDoc(classId).set({ [userId]: false }, { merge: true });
-        }, 1500);
-      });
-    }
-
-    chatUnsubs.push(
-      typingDoc(classId).onSnapshot((doc) => {
-        if (!typingDiv) return;
-        if (!doc.exists) return (typingDiv.textContent = "");
-        const data = doc.data() || {};
-        const othersTyping = Object.entries(data).some(([id, val]) => id !== userId && val === true);
-        typingDiv.textContent = othersTyping ? "Someone is typing..." : "";
-      })
-    );
-
-    async function ensureApprovedOrBlock() {
-      const banDoc = await bannedRef(classId, userId).get();
-      if (banDoc.exists) {
-        if (chatStatus) { chatStatus.textContent = "You are banned."; chatStatus.className = "notice bad"; }
-        return false;
-      }
-      const pDoc = await pendingRef(classId, userId).get();
-      const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-      if (st !== "approved") {
-        if (chatStatus) {
-          chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
-          chatStatus.className = "notice bad";
-        }
-        return false;
-      }
-      return true;
-    }
-
-    // Send text message
-    if (sendBtn && msgInput) {
-      sendBtn.onclick = async () => {
-        const text = msgInput.value.trim();
-        if (!text) return;
-        if (!(await ensureApprovedOrBlock())) return;
-
-        await messagesCol(classId).add({
-          type: "text",
-          name,
-          userId,
-          text,
-          replyTo: null,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-
-        msgInput.value = "";
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      };
-    }
-
-    // Attach button -> choose image
-    if (attachBtn && fileInput) {
-      attachBtn.onclick = async () => {
-        if (!(await ensureApprovedOrBlock())) return;
-        fileInput.value = "";
-        fileInput.click();
-      };
-
-      fileInput.onchange = async () => {
-        const file = fileInput.files && fileInput.files[0];
-        if (!file) return;
-
-        // only images
-        if (!file.type || !file.type.startsWith("image/")) {
-          if (chatStatus) { chatStatus.textContent = "Only image files are allowed right now."; chatStatus.className = "notice bad"; }
-          return;
-        }
-
-        if (!(await ensureApprovedOrBlock())) return;
-
-        try {
-          if (chatStatus) { chatStatus.textContent = "Uploading image for admin approval…"; chatStatus.className = "notice warn"; }
-
-          const uploadId = "att_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-          const path = `classes/${classId}/pendingAttachments/${uploadId}_${file.name.replace(/[^\w.\-]+/g, "_")}`;
-
-          const storageRef = storage.ref().child(path);
-          await storageRef.put(file, { contentType: file.type });
-
-          await pendingAttachmentsCol(classId).doc(uploadId).set({
-            uploadId,
-            status: "pending", // pending | approved | rejected
-            classId,
-            uploaderId: userId,
-            uploaderName: name,
-            fileName: file.name,
-            contentType: file.type,
-            storagePath: path,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-
-          if (chatStatus) { chatStatus.textContent = "Sent to admin for approval ✅"; chatStatus.className = "notice good"; }
-          setTimeout(() => { if (chatStatus) chatStatus.textContent = ""; }, 2200);
-        } catch (e) {
-          console.error(e);
-          if (chatStatus) { chatStatus.textContent = "Upload failed. Check Storage rules / quota."; chatStatus.className = "notice bad"; }
-        }
-      };
-    }
-
-    // Live messages optimized (last 200)
-    const q = messagesCol(classId).orderBy("timestamp", "asc").limitToLast(200);
-
-    chatUnsubs.push(
-      q.onSnapshot((snap) => {
-        if (!messagesDiv) return;
-
-        snap.docChanges().forEach((chg) => {
-          const doc = chg.doc;
-          const m = doc.data() || {};
-
-          // Only main messages in this main list
-          if (m.replyTo !== null) return;
-
-          const isOwn = m.userId === userId;
-          const time = m.timestamp && m.timestamp.toDate
-            ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-            : "Sending...";
-
-          let bodyHtml = "";
-          if (m.type === "image" && m.attachmentUrl) {
-            bodyHtml = `
-              <div class="msg-text">${escapeHtml(m.text || "")}</div>
-              <div class="attach-preview"><img src="${m.attachmentUrl}" alt="attachment"></div>
-            `;
-          } else {
-            bodyHtml = `<div class="msg-text">${escapeHtml(m.text || "")}</div>`;
-          }
-
-          const html = `
-            <div class="msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-              <div class="msg-top">
-                <strong>${escapeHtml(m.name || "")}</strong>
-                <span class="msg-time">${time}</span>
-              </div>
-              ${bodyHtml}
-              <div class="msg-actions">
-                <button class="reply-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">Reply</button>
-                <button class="view-replies-btn" data-id="${doc.id}" data-text="${encodeURIComponent(m.text || "")}">View replies</button>
-                ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="null">Delete</button>` : ""}
-              </div>
-            </div>
-          `;
-
-          if (chg.type === "removed") {
-            removeMessageNode(doc.id);
-          } else {
-            const sortKey = (m.timestamp && m.timestamp.toMillis) ? m.timestamp.toMillis() : Date.now();
-            upsertMessageNode({ container: messagesDiv, id: doc.id, html, sortKey });
-          }
-        });
-
-        scrollToBottomIfNearBottom(messagesDiv);
-      }, (err) => console.error("messages listener error", err))
-    );
-  }
-
-  // ===== Replies (kept simple) =====
-  function openReplies(parentId, parentText) {
-    const classId = localStorage.getItem("classId");
-    const userId = localStorage.getItem("userId");
-    const name = localStorage.getItem("userName");
-
-    const panel = $("replies-panel");
-    const title = $("replies-title");
-    const list = $("replies-list");
-    const sendReplyBtn = $("sendReplyBtn");
-    const replyInput = $("replyMsgInput");
-    if (!panel) return;
-
-    panel.classList.remove("hidden");
-    if (title) title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
-
-    const unsub = messagesCol(classId).orderBy("timestamp", "asc").limitToLast(300).onSnapshot((snap) => {
-      if (!list) return;
-      list.innerHTML = "";
-      snap.forEach((doc) => {
-        const m = doc.data() || {};
-        if (m.replyTo !== parentId) return;
-        const isOwn = m.userId === userId;
-        const time = m.timestamp && m.timestamp.toDate
-          ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-          : "Sending...";
-        list.innerHTML += `
-          <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-            <div class="msg-top">
-              <strong>${escapeHtml(m.name || "")}</strong>
-              <span class="msg-time">${time}</span>
-            </div>
-            <div class="msg-text">${escapeHtml(m.text || "")}</div>
-            <div class="msg-actions">
-              ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
+    </div>
+
+    <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
+
+    <!-- CLASS SELECT -->
+    <div id="screen-class" class="screen active">
+
+      <!-- ADMIN PATH BUTTON (ONLY HERE NOW) -->
+      <button class="admin-path-btn"
+        onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
+        ADMIN PATH
+      </button>
+
+      <div class="entry-card">
+        <div class="entry-top">
+          <div class="brand">
+            <div class="brand-badge"><span>ST</span></div>
+            <div>
+              <h1 class="entry-title">SecureText</h1>
+              <p class="entry-sub">Choose your class to get started.</p>
             </div>
           </div>
-        `;
+        </div>
+
+        <div id="classes" class="classes-wrap"></div>
+        <p id="classError" class="notice bad"></p>
+      </div>
+    </div>
+
+    <!-- PIN -->
+    <div id="screen-pin" class="screen">
+      <div class="entry-card">
+        <div class="entry-top">
+          <div class="brand">
+            <div class="brand-badge"><span>ST</span></div>
+            <div>
+              <h1 class="entry-title">Enter PIN</h1>
+              <p class="entry-sub">Class: <strong id="pinClassName"></strong></p>
+            </div>
+          </div>
+          <button id="pinBackBtn" class="btn ghost">Back</button>
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <div class="label">Class PIN</div>
+            <input id="pinInput" class="input" type="password" placeholder="••••" />
+          </div>
+          <button id="pinContinueBtn" class="btn primary">Continue</button>
+          <p id="pinError" class="notice bad"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAME -->
+    <div id="screen-name" class="screen">
+      <div class="entry-card">
+        <div class="entry-top">
+          <div class="brand">
+            <div class="brand-badge"><span>ST</span></div>
+            <div>
+              <h1 class="entry-title">Your Name</h1>
+              <p class="entry-sub">This is what others will see in chat.</p>
+            </div>
+          </div>
+          <button id="nameBackBtn" class="btn ghost">Back</button>
+        </div>
+
+        <div class="entry-form">
+          <div class="field">
+            <div class="label">Display name</div>
+            <input id="nameInput" class="input" type="text" placeholder="e.g. Tester" />
+          </div>
+          <button id="nameContinueBtn" class="btn primary">Request Access</button>
+          <p id="nameError" class="notice bad"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- WAIT -->
+    <div id="screen-wait" class="screen">
+      <div class="entry-card">
+        <div class="entry-top">
+          <div class="brand">
+            <div class="brand-badge"><span>ST</span></div>
+            <div>
+              <h1 class="entry-title">Waiting for Approval</h1>
+              <p class="entry-sub" id="waitText"></p>
+            </div>
+          </div>
+          <button id="resetBtn" class="btn ghost">Start over</button>
+        </div>
+
+        <div style="position:relative;z-index:1;margin-top:8px;">
+          <p class="entry-sub">Keep this tab open — you’ll enter chat automatically once approved.</p>
+          <p id="waitStatus" class="notice warn"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div id="screen-chat" class="screen">
+      <div id="chat-screen" class="night">
+        <header class="chat-header">
+          <div>
+            <h1 id="chatWelcome">Welcome!</h1>
+            <p class="subtitle" id="chatSubtitle">SecureText chat</p>
+          </div>
+          <div class="chat-controls">
+            <button id="themeToggle">🌙</button>
+            <button id="logoutBtn">Logout</button>
+          </div>
+        </header>
+
+        <div id="announcementsBox">
+          <strong>Announcements</strong>
+          <div id="announcementsList"></div>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div id="typingIndicator"></div>
+
+        <div id="replies-panel" class="replies hidden">
+          <div class="replies-header">
+            <span id="replies-title">Replies</span>
+            <button id="closeReplies">Close</button>
+          </div>
+          <div id="replies-list" class="replies-list"></div>
+          <div class="reply-input">
+            <input id="replyMsgInput" type="text" placeholder="Reply..." />
+            <button id="sendReplyBtn">Send</button>
+          </div>
+        </div>
+
+        <div id="chat-input">
+          <input id="msgInput" type="text" placeholder="Type a message" />
+          <button id="sendBtn">Send</button>
+        </div>
+
+        <p id="chatStatus" class="notice"></p>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="firebase.js"></script>
+  <script src="app.js"></script>
+
+  <!-- SAFE INTRO/CONFETTI HELPERS (does NOT touch your app.js) -->
+  <script>
+    (function(){
+      const overlay = document.getElementById("introOverlay");
+      const hint = document.getElementById("introHint");
+      const canvas = document.getElementById("confettiCanvas");
+
+      function setHint(t){ if (hint) hint.textContent = t; }
+
+      function hardRemoveOverlay(){
+        if (!overlay) return;
+        overlay.classList.add("hidden");
+        // remove for real so it can NEVER block clicks
+        setTimeout(() => {
+          try { overlay.parentNode && overlay.parentNode.removeChild(overlay); } catch {}
+        }, 250);
+      }
+
+      // remove once page is ready
+      window.addEventListener("load", () => {
+        setHint("Ready");
+        setTimeout(hardRemoveOverlay, 650);
       });
-      list.scrollTop = list.scrollHeight;
-    });
 
-    if (sendReplyBtn) {
-      sendReplyBtn.onclick = async () => {
-        const text = replyInput.value.trim();
-        if (!text) return;
+      // ALSO remove on first user interaction (extra safety)
+      window.addEventListener("pointerdown", hardRemoveOverlay, { once: true });
 
-        const pDoc = await pendingRef(classId, userId).get();
-        const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-        if (st !== "approved") return;
+      // Expose optional helpers (your app.js can call these if you want later)
+      window.ST_UI = {
+        setHint,
+        hideIntro: hardRemoveOverlay,
+        confettiBurst: function(durationMs = 1200){
+          if (!canvas) return;
+          const ctx = canvas.getContext("2d");
+          canvas.width = innerWidth; canvas.height = innerHeight;
+          canvas.classList.add("on");
 
-        await messagesCol(classId).add({
-          type: "text",
-          name,
-          userId,
-          text,
-          replyTo: parentId,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
+          const colors = ["rgba(60,255,160,.95)","rgba(80,140,255,.95)","rgba(255,255,255,.90)","rgba(255,211,107,.95)"];
+          const rand = (a,b)=>a+Math.random()*(b-a);
+          const pieces = [];
+          const count = Math.min(160, Math.floor(innerWidth/8));
 
-        replyInput.value = "";
+          for (let i=0;i<count;i++){
+            pieces.push({
+              x: rand(0, canvas.width),
+              y: rand(-40, -10),
+              w: rand(6,12),
+              h: rand(3,6),
+              vx: rand(-2.8,2.8),
+              vy: rand(2.5,6.8),
+              rot: rand(0, Math.PI*2),
+              vr: rand(-0.18,0.18),
+              color: colors[Math.floor(Math.random()*colors.length)],
+              life: rand(durationMs*0.6, durationMs)
+            });
+          }
+
+          const start = performance.now();
+          function frame(now){
+            const t = now - start;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+
+            for (const p of pieces){
+              p.life -= 16;
+              p.x += p.vx;
+              p.y += p.vy;
+              p.rot += p.vr;
+              p.vy += 0.03;
+
+              ctx.save();
+              ctx.translate(p.x,p.y);
+              ctx.rotate(p.rot);
+              ctx.fillStyle = p.color;
+              ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+              ctx.restore();
+            }
+
+            const alive = pieces.some(p => p.life > 0 && p.y < canvas.height + 40);
+            if (t < durationMs && alive) requestAnimationFrame(frame);
+            else {
+              canvas.classList.remove("on");
+              ctx.clearRect(0,0,canvas.width,canvas.height);
+            }
+          }
+          requestAnimationFrame(frame);
+        }
       };
-    }
-
-    panel._unsubReplies = unsub;
-  }
-
-  function closeReplies() {
-    const panel = $("replies-panel");
-    if (!panel) return;
-    panel.classList.add("hidden");
-    if (panel._unsubReplies) {
-      try { panel._unsubReplies(); } catch {}
-      panel._unsubReplies = null;
-    }
-  }
-
-  async function deleteMessage(messageId, parentId) {
-    const classId = localStorage.getItem("classId");
-    await messagesCol(classId).doc(messageId).delete();
-
-    if (parentId === "null") {
-      const snap = await messagesCol(classId).get();
-      const batch = db.batch();
-      snap.forEach((d) => {
-        const m = d.data() || {};
-        if (m.replyTo === messageId) batch.delete(d.ref);
-      });
-      await batch.commit();
-    }
-  }
-
-  // Global click handler
-  document.addEventListener("click", (e) => {
-    const t = e.target;
-
-    if (t && t.id === "closeReplies") closeReplies();
-
-    if (t && t.classList && (t.classList.contains("reply-btn") || t.classList.contains("view-replies-btn"))) {
-      const parentId = t.dataset.id;
-      const parentText = t.dataset.text || "";
-      openReplies(parentId, parentText);
-    }
-
-    if (t && t.classList && t.classList.contains("delete-btn")) {
-      const id = t.dataset.id;
-      const parent = t.dataset.parent;
-      deleteMessage(id, parent);
-    }
-  });
-});
+    })();
+  </script>
+</body>
+</html>
