@@ -11,9 +11,6 @@ document.addEventListener("DOMContentLoaded", () => {
         chat: $("screen-chat"),
     };
 
-    // Track current screen (used to hard-gate admin path)
-    let currentScreenKey = "class";
-
     // Extra legacy full-screen nodes that might still exist (from older versions / CSS)
     const legacyFullScreens = ["name-screen", "waiting-screen", "chat-screen"];
 
@@ -39,48 +36,19 @@ document.addEventListener("DOMContentLoaded", () => {
     function showScreen(key) {
         Object.values(screens).forEach((el) => hardHideEl(el));
 
+        // hide any old full-screen overlays that can block clicks
         legacyFullScreens.forEach((id) => {
             const el = $(id);
-            if (id === "chat-screen") return;
+            if (id === "chat-screen") return; // don't hide inner chat container
             if (el) hardHideEl(el);
         });
 
         hardShowEl(screens[key]);
-        currentScreenKey = key;
-
-        // Let index.html decide admin button visibility, but if it exists, we can also do a soft toggle:
-        try {
-            const adminBtn = document.querySelector(".admin-path-btn");
-            if (adminBtn) adminBtn.style.display = key === "class" ? "block" : "none";
-        } catch { }
     }
-
-    // ===== Admin path hard-gate (ONLY works on class screen) =====
-    (function gateAdminPath() {
-        const adminBtn = document.querySelector(".admin-path-btn");
-        if (!adminBtn) return;
-
-        // Capture-phase listener so it blocks even if there are other handlers
-        adminBtn.addEventListener(
-            "click",
-            (e) => {
-                if (currentScreenKey !== "class") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return;
-                }
-                // If you're on class screen, allow normal behavior (index.html can handle routing)
-            },
-            true
-        );
-    })();
 
     function escapeHtml(str) {
         if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     function setLS(obj) {
@@ -92,7 +60,7 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.removeItem("className");
         localStorage.removeItem("userId");
         localStorage.removeItem("userName");
-        // keep rules acceptance unless you want it to re-ask next time
+        // NOTE: rulesAccepted keys are NOT cleared here by default
     }
 
     function classDocRef(classId) {
@@ -119,6 +87,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return classDocRef(classId).collection("meta").doc("typing");
     }
 
+    function commandsDoc(classId) {
+        return classDocRef(classId).collection("meta").doc("commands");
+    }
+
     // ===== RULES GATE =====
     function rulesKey(classId, userId) {
         return `rulesAccepted:${classId}:${userId}`;
@@ -132,13 +104,18 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.setItem(rulesKey(classId, userId), "true");
     }
 
+    function clearAcceptedRules(classId, userId) {
+        localStorage.removeItem(rulesKey(classId, userId));
+    }
+
     function showRulesGate({ classId, userId, userName, className }, onContinue) {
+        // If already accepted, go straight in
         if (hasAcceptedRules(classId, userId)) {
             onContinue();
             return;
         }
 
-        // Confetti once
+        // optional confetti
         try {
             if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
                 window.ST_UI.confettiBurst(1400);
@@ -147,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const root = $("root") || document.body;
 
+        // remove any existing gate
         const old = document.getElementById("rulesGateOverlay");
         if (old) old.remove();
 
@@ -264,7 +242,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const controls = document.createElement("div");
         controls.style.display = "grid";
         controls.style.gap = "10px";
-        controls.style.marginTop = "2px";
 
         const checkWrap = document.createElement("label");
         checkWrap.style.display = "flex";
@@ -276,7 +253,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.id = "rulesChk";
         checkbox.style.transform = "scale(1.15)";
         checkbox.style.cursor = "pointer";
 
@@ -287,21 +263,17 @@ document.addEventListener("DOMContentLoaded", () => {
         checkWrap.appendChild(checkbox);
         checkWrap.appendChild(checkText);
 
-        const btnRow = document.createElement("div");
-        btnRow.style.display = "flex";
-        btnRow.style.justifyContent = "flex-end";
-        btnRow.style.gap = "10px";
-        btnRow.style.marginTop = "2px";
-
         const lockedNote = document.createElement("div");
-        lockedNote.id = "rulesLockedNote";
         lockedNote.style.marginTop = "6px";
         lockedNote.style.fontSize = "12px";
         lockedNote.style.opacity = "0.78";
         lockedNote.textContent = "Please wait…";
 
+        const btnRow = document.createElement("div");
+        btnRow.style.display = "flex";
+        btnRow.style.justifyContent = "flex-end";
+
         const btn = document.createElement("button");
-        btn.id = "rulesAcceptBtn";
         btn.type = "button";
         btn.textContent = "I Understand";
         btn.disabled = true;
@@ -311,7 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.style.padding = "10px 14px";
         btn.style.borderRadius = "12px";
         btn.style.cursor = "not-allowed";
-        btn.style.transition = "transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease";
 
         btnRow.appendChild(btn);
 
@@ -326,12 +297,15 @@ document.addEventListener("DOMContentLoaded", () => {
         overlay.appendChild(card);
         root.appendChild(overlay);
 
+        // gating logic: 30s delay + 10s button lock + checkbox required
         let delayLeft = 30;
         let lockLeft = 10;
+
         const delayEl = document.getElementById("rulesDelayText");
 
         const tick = () => {
             if (delayEl) delayEl.textContent = `Security delay: ${delayLeft}s`;
+
             if (lockLeft > 0) lockedNote.textContent = `Button unlocks in ${lockLeft}s…`;
             else lockedNote.textContent = checkbox.checked ? "You may continue." : "Check the box to continue.";
 
@@ -517,6 +491,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            // stable-ish device id
             const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
             try {
@@ -531,7 +506,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     userId,
                     classId: selectedClassId,
                     className: selectedClassName || selectedClassId,
-                    status: "pending",
+                    status: "pending", // pending | approved | rejected | banned
                     approved: false,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -654,7 +629,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // ===== CHAT (OPTIMIZED) =====
+    // ===== CHAT =====
     let chatUnsubs = [];
     function clearChatListeners() {
         chatUnsubs.forEach((u) => {
@@ -663,73 +638,39 @@ document.addEventListener("DOMContentLoaded", () => {
         chatUnsubs = [];
     }
 
-    function isNearBottom(el, thresholdPx = 140) {
-        if (!el) return true;
-        return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
+    // incremental render state (reduces flashing + bandwidth)
+    const rendered = new Map(); // msgId -> true
+
+    function resetRender() {
+        rendered.clear();
     }
 
-    function fmtTime(ts) {
-        return ts && ts.toDate
-            ? ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-            : "Sending...";
-    }
+    function buildMsgHtml(docId, m, userId) {
+        const isOwn = m.userId === userId;
+        const time =
+            m.timestamp && m.timestamp.toDate
+                ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "Sending...";
 
-    function buildMsgEl({ docId, name, userId, text, time, isOwn }) {
-        const wrap = document.createElement("div");
-        wrap.className = `msg ${isOwn ? "own" : ""}`;
-        wrap.dataset.id = docId;
-
-        wrap.innerHTML = `
-      <div class="msg-top">
-        <strong>${escapeHtml(name || "")}</strong>
-        <span class="msg-time">${escapeHtml(time || "")}</span>
-      </div>
-      <div class="msg-text">${escapeHtml(text || "")}</div>
-      <div class="msg-actions">
-        <button class="reply-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">Reply</button>
-        <button class="view-replies-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">View replies</button>
-        ${isOwn ? `<button class="delete-btn" data-id="${docId}" data-parent="null">Delete</button>` : ""}
+        return `
+      <div class="msg ${isOwn ? "own" : ""}" data-id="${docId}">
+        <div class="msg-top">
+          <strong>${escapeHtml(m.name || "")}</strong>
+          <span class="msg-time">${time}</span>
+        </div>
+        <div class="msg-text">${escapeHtml(m.text || "")}</div>
+        <div class="msg-actions">
+          <button class="reply-btn" data-id="${docId}" data-text="${encodeURIComponent(m.text || "")}">Reply</button>
+          <button class="view-replies-btn" data-id="${docId}" data-text="${encodeURIComponent(m.text || "")}">View replies</button>
+          ${isOwn ? `<button class="delete-btn" data-id="${docId}" data-parent="null">Delete</button>` : ""}
+        </div>
       </div>
     `;
-        return wrap;
-    }
-
-    function updateMsgEl(el, { name, text, time, isOwn }) {
-        if (!el) return;
-
-        el.className = `msg ${isOwn ? "own" : ""}`;
-
-        const strong = el.querySelector(".msg-top strong");
-        if (strong) strong.textContent = name || "";
-
-        const t = el.querySelector(".msg-time");
-        if (t) t.textContent = time || "";
-
-        const txt = el.querySelector(".msg-text");
-        if (txt) txt.innerHTML = escapeHtml(text || "");
-
-        const replyBtn = el.querySelector(".reply-btn");
-        const viewBtn = el.querySelector(".view-replies-btn");
-        if (replyBtn) replyBtn.dataset.text = encodeURIComponent(text || "");
-        if (viewBtn) viewBtn.dataset.text = encodeURIComponent(text || "");
-
-        const actions = el.querySelector(".msg-actions");
-        if (actions) {
-            const del = actions.querySelector(".delete-btn");
-            if (isOwn && !del) {
-                const b = document.createElement("button");
-                b.className = "delete-btn";
-                b.dataset.id = el.dataset.id;
-                b.dataset.parent = "null";
-                b.textContent = "Delete";
-                actions.appendChild(b);
-            }
-            if (!isOwn && del) del.remove();
-        }
     }
 
     function loadChat(name, classId, userId) {
         clearChatListeners();
+        resetRender();
 
         const chatWelcome = $("chatWelcome");
         const chatSubtitle = $("chatSubtitle");
@@ -746,6 +687,45 @@ document.addEventListener("DOMContentLoaded", () => {
         const messagesDiv = $("messages");
         const typingDiv = $("typingIndicator");
         const themeToggle = $("themeToggle");
+
+        // ===== watch admin commands (force logout / force rules) =====
+        let lastForceLogoutMs = Number(localStorage.getItem(`forceLogoutSeen:${classId}:${userId}`) || "0");
+        let lastForceRulesMs = Number(localStorage.getItem(`forceRulesSeen:${classId}:${userId}`) || "0");
+
+        chatUnsubs.push(
+            commandsDoc(classId).onSnapshot((doc) => {
+                if (!doc.exists) return;
+                const data = doc.data() || {};
+
+                // FORCE LOGOUT (everyone)
+                const flo = data.forceLogoutAt;
+                if (flo && flo.toDate) {
+                    const ms = flo.toDate().getTime();
+                    if (ms > lastForceLogoutMs) {
+                        localStorage.setItem(`forceLogoutSeen:${classId}:${userId}`, String(ms));
+                        clearLS();
+                        location.reload();
+                        return;
+                    }
+                }
+
+                // FORCE RULES RE-ACCEPT (everyone)
+                const fr = data.forceRulesAt;
+                if (fr && fr.toDate) {
+                    const ms = fr.toDate().getTime();
+                    if (ms > lastForceRulesMs) {
+                        localStorage.setItem(`forceRulesSeen:${classId}:${userId}`, String(ms));
+                        clearAcceptedRules(classId, userId);
+
+                        // show rules immediately and only continue after accept
+                        showRulesGate(
+                            { classId, userId, userName: name, className: selectedClassName || classId },
+                            () => { }
+                        );
+                    }
+                }
+            })
+        );
 
         // theme toggle
         if (themeToggle) {
@@ -765,62 +745,41 @@ document.addEventListener("DOMContentLoaded", () => {
             };
         }
 
-        // Enter-to-send (Shift+Enter keeps newline if you ever allow multi-line)
-        if (msgInput && sendBtn) {
-            msgInput.onkeydown = (e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendBtn.click();
-                }
-            };
-        }
-
-        // announcements (small list, OK to re-render)
+        // announcements (per-class) - keep low limit
         chatUnsubs.push(
             announcementsCol(classId)
-                .orderBy("timestamp", "asc")
-                .limit(50)
+                .orderBy("timestamp", "desc")
+                .limit(25)
                 .onSnapshot((snap) => {
                     const box = $("announcementsList");
                     if (!box) return;
                     box.innerHTML = "";
-                    snap.forEach((doc) => {
-                        const a = doc.data() || {};
-                        const t = fmtTime(a.timestamp);
+                    const docs = snap.docs.slice().reverse();
+                    for (const d of docs) {
+                        const a = d.data() || {};
+                        const t =
+                            a.timestamp && a.timestamp.toDate
+                                ? a.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                : "";
                         const div = document.createElement("div");
-                        div.innerHTML = `<div style="margin:6px 0;"><strong>[${escapeHtml(t)}]</strong> ${escapeHtml(a.text || "")}</div>`;
+                        div.innerHTML = `<div style="margin:6px 0;"><strong>[${t}]</strong> ${escapeHtml(a.text || "")}</div>`;
                         box.appendChild(div);
-                    });
+                    }
                     if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
                 })
         );
 
-        // typing indicator (debounced + only writes on change)
+        // typing indicator (per-class) — keep as-is but avoid extra writes if empty
         let typingTimeout = null;
-        let typingDebounce = null;
-        let localTyping = false;
-
-        async function setTyping(val) {
-            if (localTyping === val) return;
-            localTyping = val;
-            try {
-                await typingDoc(classId).set({ [userId]: val }, { merge: true });
-            } catch { }
-        }
-
         if (msgInput) {
-            msgInput.oninput = () => {
-                if (typingDebounce) clearTimeout(typingDebounce);
-                typingDebounce = setTimeout(() => setTyping(true), 220);
-
+            msgInput.addEventListener("input", () => {
+                typingDoc(classId).set({ [userId]: true }, { merge: true });
                 if (typingTimeout) clearTimeout(typingTimeout);
-                typingTimeout = setTimeout(() => setTyping(false), 1500);
-            };
+                typingTimeout = setTimeout(() => {
+                    typingDoc(classId).set({ [userId]: false }, { merge: true });
+                }, 1500);
+            });
         }
-
-        window.addEventListener("beforeunload", () => {
-            try { typingDoc(classId).set({ [userId]: false }, { merge: true }); } catch { }
-        });
 
         chatUnsubs.push(
             typingDoc(classId).onSnapshot((doc) => {
@@ -835,137 +794,108 @@ document.addEventListener("DOMContentLoaded", () => {
             })
         );
 
-        // send message (MAIN)
+        async function sendMessage() {
+            const text = msgInput.value.trim();
+            if (!text) return;
+
+            // block if banned/rejected mid-session
+            const banDoc = await bannedRef(classId, userId).get();
+            if (banDoc.exists) {
+                if (chatStatus) {
+                    chatStatus.textContent = "You are banned.";
+                    chatStatus.className = "notice bad";
+                }
+                return;
+            }
+
+            const pDoc = await pendingRef(classId, userId).get();
+            const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
+            if (st !== "approved") {
+                if (chatStatus) {
+                    chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
+                    chatStatus.className = "notice bad";
+                }
+                return;
+            }
+
+            await messagesCol(classId).add({
+                name,
+                userId,
+                text,
+                replyTo: null,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+
+            msgInput.value = "";
+            typingDoc(classId).set({ [userId]: false }, { merge: true });
+        }
+
+        // send message (click)
         if (sendBtn && msgInput) {
-            sendBtn.onclick = async () => {
-                const text = msgInput.value.trim();
-                if (!text) return;
-
-                const banDoc = await bannedRef(classId, userId).get();
-                if (banDoc.exists) {
-                    if (chatStatus) {
-                        chatStatus.textContent = "You are banned.";
-                        chatStatus.className = "notice bad";
-                    }
-                    return;
-                }
-
-                const pDoc = await pendingRef(classId, userId).get();
-                const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-                if (st !== "approved") {
-                    if (chatStatus) {
-                        chatStatus.textContent = st === "rejected" ? "You were rejected." : "You are not approved.";
-                        chatStatus.className = "notice bad";
-                    }
-                    return;
-                }
-
-                try {
-                    await messagesCol(classId).add({
-                        name,
-                        userId,
-                        text,
-                        replyTo: null,
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    });
-                } catch (e) {
-                    console.error(e);
-                    if (chatStatus) {
-                        chatStatus.textContent = "Failed to send (quota/rules).";
-                        chatStatus.className = "notice bad";
-                    }
-                    return;
-                }
-
-                msgInput.value = "";
-                setTyping(false);
-            };
+            sendBtn.onclick = sendMessage;
         }
 
-        // ===== LIVE MESSAGES (LIMITED + docChanges; no full re-render) =====
-        // Important quota saver: do NOT listen to infinite history.
-        const MAX_MAIN_MESSAGES = 200;
-
-        const msgEls = new Map(); // docId -> element
-
-        function clearAllMessages() {
-            msgEls.clear();
-            if (messagesDiv) messagesDiv.innerHTML = "";
+        // enter-to-send
+        if (msgInput) {
+            msgInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
         }
 
-        clearAllMessages();
+        // live messages (MAIN) — incremental to reduce flashing/quota
+        if (messagesDiv) messagesDiv.innerHTML = "";
 
         chatUnsubs.push(
             messagesCol(classId)
                 .orderBy("timestamp", "asc")
-                .limit(MAX_MAIN_MESSAGES)
-                .onSnapshot(
-                    (snap) => {
-                        if (!messagesDiv) return;
+                .limit(300)
+                .onSnapshot((snap) => {
+                    if (!messagesDiv) return;
 
-                        const shouldStick = isNearBottom(messagesDiv, 160);
-                        const frag = document.createDocumentFragment();
-
-                        snap.docChanges().forEach((ch) => {
-                            const doc = ch.doc;
+                    // First load: render everything once
+                    if (rendered.size === 0 && snap.docChanges().length === snap.size) {
+                        messagesDiv.innerHTML = "";
+                        snap.forEach((doc) => {
                             const m = doc.data() || {};
-
-                            // Only main messages
                             if (m.replyTo !== null) return;
-
-                            const docId = doc.id;
-
-                            if (ch.type === "removed") {
-                                const el = msgEls.get(docId);
-                                if (el && el.parentNode) el.parentNode.removeChild(el);
-                                msgEls.delete(docId);
-                                return;
-                            }
-
-                            const isOwn = m.userId === userId;
-                            const time = fmtTime(m.timestamp);
-
-                            if (ch.type === "added") {
-                                if (msgEls.has(docId)) return; // safety
-                                const el = buildMsgEl({
-                                    docId,
-                                    name: m.name || "",
-                                    userId: m.userId || "",
-                                    text: m.text || "",
-                                    time,
-                                    isOwn,
-                                });
-                                msgEls.set(docId, el);
-                                frag.appendChild(el);
-                            }
-
-                            if (ch.type === "modified") {
-                                const el = msgEls.get(docId);
-                                if (el) {
-                                    updateMsgEl(el, {
-                                        name: m.name || "",
-                                        text: m.text || "",
-                                        time,
-                                        isOwn,
-                                    });
-                                }
-                            }
+                            rendered.set(doc.id, true);
+                            messagesDiv.insertAdjacentHTML("beforeend", buildMsgHtml(doc.id, m, userId));
                         });
-
-                        if (frag.childNodes.length) messagesDiv.appendChild(frag);
-
-                        if (shouldStick) {
-                            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                        }
-                    },
-                    (err) => {
-                        console.error("Messages listener error:", err);
-                        if (chatStatus) {
-                            chatStatus.textContent = "Chat stream error (quota/rules).";
-                            chatStatus.className = "notice bad";
-                        }
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        return;
                     }
-                )
+
+                    // Apply only changes
+                    snap.docChanges().forEach((ch) => {
+                        const doc = ch.doc;
+                        const m = doc.data() || {};
+                        if (m.replyTo !== null) return; // main only
+
+                        if (ch.type === "added") {
+                            if (rendered.has(doc.id)) return;
+                            rendered.set(doc.id, true);
+                            messagesDiv.insertAdjacentHTML("beforeend", buildMsgHtml(doc.id, m, userId));
+                        } else if (ch.type === "removed") {
+                            rendered.delete(doc.id);
+                            const el = messagesDiv.querySelector(`.msg[data-id="${doc.id}"]`);
+                            if (el) el.remove();
+                        } else if (ch.type === "modified") {
+                            // minimal update: replace text/time
+                            const el = messagesDiv.querySelector(`.msg[data-id="${doc.id}"]`);
+                            if (el) {
+                                const textEl = el.querySelector(".msg-text");
+                                if (textEl) textEl.innerHTML = escapeHtml(m.text || "");
+                            }
+                        }
+                    });
+
+                    // keep scrolled to bottom if user is already near bottom
+                    const nearBottom = messagesDiv.scrollHeight - (messagesDiv.scrollTop + messagesDiv.clientHeight) < 140;
+                    if (nearBottom) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                })
         );
     }
 
@@ -986,30 +916,27 @@ document.addEventListener("DOMContentLoaded", () => {
         panel.classList.remove("hidden");
         title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
 
-        // Replies can be heavier. Keep it bounded too.
-        const MAX_REPLIES_SCAN = 500;
-
         const unsub = messagesCol(classId)
             .orderBy("timestamp", "asc")
-            .limit(MAX_REPLIES_SCAN)
+            .limit(400)
             .onSnapshot((snap) => {
                 if (!list) return;
-
-                const stick = isNearBottom(list, 120);
                 list.innerHTML = "";
-
                 snap.forEach((doc) => {
                     const m = doc.data() || {};
                     if (m.replyTo !== parentId) return;
 
                     const isOwn = m.userId === userId;
-                    const time = fmtTime(m.timestamp);
+                    const time =
+                        m.timestamp && m.timestamp.toDate
+                            ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "Sending...";
 
                     list.innerHTML += `
             <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
               <div class="msg-top">
                 <strong>${escapeHtml(m.name || "")}</strong>
-                <span class="msg-time">${escapeHtml(time)}</span>
+                <span class="msg-time">${time}</span>
               </div>
               <div class="msg-text">${escapeHtml(m.text || "")}</div>
               <div class="msg-actions">
@@ -1019,7 +946,7 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
                 });
 
-                if (stick) list.scrollTop = list.scrollHeight;
+                list.scrollTop = list.scrollHeight;
             });
 
         if (sendReplyBtn) {
@@ -1061,10 +988,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const classId = localStorage.getItem("classId");
         await messagesCol(classId).doc(messageId).delete();
 
-        // delete replies if deleting a main message
         if (parentId === "null") {
-            // bounded scan to avoid quota nuking
-            const snap = await messagesCol(classId).orderBy("timestamp", "asc").limit(800).get();
+            const snap = await messagesCol(classId).get();
             const batch = db.batch();
             snap.forEach((d) => {
                 const m = d.data() || {};

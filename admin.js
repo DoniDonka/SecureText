@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function clearListeners() {
-    liveUnsubs.forEach((u) => { try { u(); } catch {} });
+    liveUnsubs.forEach((u) => { try { u(); } catch { } });
     liveUnsubs = [];
   }
 
@@ -32,9 +32,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   function commandsDoc(classId) {
     return classDocRef(classId).collection("meta").doc("commands");
-  }
-  function pendingAttachmentsCol(classId) {
-    return classDocRef(classId).collection("pendingAttachments");
   }
 
   // ===== auth UI =====
@@ -111,74 +108,87 @@ document.addEventListener("DOMContentLoaded", () => {
     $("admin-screen").style.display = "block";
     $("classTitle").textContent = `Class: ${className} (${classId})`;
 
+    wireControls();
     wirePendingUsers();
+    wireApprovedUsers();
     wireBannedUsers();
     wireAnnouncements();
     wireLiveChat();
-    wirePendingAttachments();
-    wireControls();
   }
 
   // ===== controls =====
   function wireControls() {
-    $("forceRulesBtn").onclick = async () => {
-      if (!currentClassId) return;
-      setStatus("Forcing rules re-accept for everyone...");
-      try {
-        await commandsDoc(currentClassId).set({
-          forceRulesAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        setStatus("Done: rules re-accept triggered.");
-      } catch (e) {
-        console.error(e);
-        setStatus("Failed to force rules.");
-      }
-      setTimeout(() => setStatus(""), 2500);
-    };
+    const forceRulesBtn = $("forceRulesBtn");
+    const forceLogoutBtn = $("forceLogoutBtn");
+    const deleteAllChatBtn = $("deleteAllChatBtn");
+    const deleteAllAnnouncementsBtn = $("deleteAllAnnouncementsBtn");
 
-    $("forceLogoutBtn").onclick = async () => {
-      if (!currentClassId) return;
-      if (!confirm("Force logout EVERYONE in this class?")) return;
-      setStatus("Forcing logout for everyone...");
-      try {
-        await commandsDoc(currentClassId).set({
-          forceLogoutAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        setStatus("Done: logout triggered.");
-      } catch (e) {
-        console.error(e);
-        setStatus("Failed to force logout.");
-      }
-      setTimeout(() => setStatus(""), 2500);
-    };
+    if (forceRulesBtn) {
+      forceRulesBtn.onclick = async () => {
+        if (!currentClassId) return;
+        setStatus("Forcing rules re-accept for everyone...");
+        try {
+          await commandsDoc(currentClassId).set({
+            forceRulesAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          setStatus("Done: rules re-accept triggered.");
+        } catch (e) {
+          console.error(e);
+          setStatus("Failed to force rules.");
+        }
+        setTimeout(() => setStatus(""), 2500);
+      };
+    }
 
-    $("deleteAllChatBtn").onclick = async () => {
-      if (!currentClassId) return;
-      if (!confirm("DELETE ALL CHAT in this class? This cannot be undone.")) return;
-      setStatus("Deleting all chat...");
-      try {
-        await deleteCollectionInChunks(messagesCol(currentClassId), 200);
-        setStatus("Deleted all chat.");
-      } catch (e) {
-        console.error(e);
-        setStatus("Failed deleting chat (check rules/quota).");
-      }
-      setTimeout(() => setStatus(""), 2500);
-    };
+    if (forceLogoutBtn) {
+      forceLogoutBtn.onclick = async () => {
+        if (!currentClassId) return;
+        if (!confirm("Force logout EVERYONE in this class?")) return;
+        setStatus("Forcing logout for everyone...");
+        try {
+          await commandsDoc(currentClassId).set({
+            forceLogoutAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          setStatus("Done: logout triggered.");
+        } catch (e) {
+          console.error(e);
+          setStatus("Failed to force logout.");
+        }
+        setTimeout(() => setStatus(""), 2500);
+      };
+    }
 
-    $("deleteAllAnnouncementsBtn").onclick = async () => {
-      if (!currentClassId) return;
-      if (!confirm("DELETE ALL ANNOUNCEMENTS in this class?")) return;
-      setStatus("Deleting all announcements...");
-      try {
-        await deleteCollectionInChunks(announcementsCol(currentClassId), 200);
-        setStatus("Deleted all announcements.");
-      } catch (e) {
-        console.error(e);
-        setStatus("Failed deleting announcements.");
-      }
-      setTimeout(() => setStatus(""), 2500);
-    };
+    if (deleteAllChatBtn) {
+      deleteAllChatBtn.onclick = async () => {
+        if (!currentClassId) return;
+        if (!confirm("DELETE ALL CHAT in this class? This cannot be undone.")) return;
+        setStatus("Deleting all chat...");
+        try {
+          await deleteCollectionInChunks(messagesCol(currentClassId), 200);
+          setStatus("Deleted all chat.");
+        } catch (e) {
+          console.error(e);
+          setStatus("Failed deleting chat (check rules/quota).");
+        }
+        setTimeout(() => setStatus(""), 2500);
+      };
+    }
+
+    if (deleteAllAnnouncementsBtn) {
+      deleteAllAnnouncementsBtn.onclick = async () => {
+        if (!currentClassId) return;
+        if (!confirm("DELETE ALL ANNOUNCEMENTS in this class?")) return;
+        setStatus("Deleting all announcements...");
+        try {
+          await deleteCollectionInChunks(announcementsCol(currentClassId), 200);
+          setStatus("Deleted all announcements.");
+        } catch (e) {
+          console.error(e);
+          setStatus("Failed deleting announcements.");
+        }
+        setTimeout(() => setStatus(""), 2500);
+      };
+    }
   }
 
   async function deleteCollectionInChunks(colRef, batchSize) {
@@ -202,9 +212,12 @@ document.addEventListener("DOMContentLoaded", () => {
         tbody.innerHTML = "";
         snap.forEach((doc) => {
           const u = doc.data() || {};
+          const status = u.status || (u.approved ? "approved" : "pending");
+          if (status !== "pending") return;
+
           const tr = document.createElement("tr");
           tr.innerHTML = `
-            <td>${(u.name || "")}</td>
+            <td>${u.name || ""}</td>
             <td><button data-act="approve" data-id="${doc.id}">Approve</button></td>
             <td><button data-act="reject" data-id="${doc.id}">Reject</button></td>
             <td><button class="danger" data-act="ban" data-id="${doc.id}">Ban</button></td>
@@ -229,12 +242,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const name = data.name || "Unknown";
 
     if (act === "approve") {
-      await ref.set({ status: "approved", approved: true, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      await ref.set(
+        { status: "approved", approved: true, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
       setStatus(`Approved ${name}`);
     }
 
     if (act === "reject") {
-      await ref.set({ status: "rejected", approved: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      await ref.set(
+        { status: "rejected", approved: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
       setStatus(`Rejected ${name}`);
     }
 
@@ -245,11 +264,68 @@ document.addEventListener("DOMContentLoaded", () => {
         name,
         bannedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      await ref.set({ status: "banned", approved: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      await ref.set(
+        { status: "banned", approved: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
       setStatus(`Banned ${name}`);
     }
 
     setTimeout(() => setStatus(""), 2000);
+  }
+
+  // ===== approved users (revoke / force rules for one) =====
+  function wireApprovedUsers() {
+    const tbody = $("approvedUsersTable").querySelector("tbody");
+
+    liveUnsubs.push(
+      pendingUsersCol(currentClassId).orderBy("updatedAt", "desc").onSnapshot((snap) => {
+        tbody.innerHTML = "";
+
+        snap.forEach((doc) => {
+          const u = doc.data() || {};
+          const status = u.status || (u.approved ? "approved" : "pending");
+          if (status !== "approved") return;
+
+          const userId = u.userId || doc.id;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${u.name || ""}</td>
+            <td class="muted">${userId}</td>
+            <td><button class="danger" data-revoke="${doc.id}">Revoke</button></td>
+            <td><button data-rules="${doc.id}">Force Rules</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll("button[data-revoke]").forEach((b) => {
+          b.onclick = async () => {
+            const id = b.getAttribute("data-revoke");
+            if (!confirm("Revoke this user's access?")) return;
+            await pendingUsersCol(currentClassId).doc(id).set(
+              { status: "rejected", approved: false, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+              { merge: true }
+            );
+            setStatus("Revoked access.");
+            setTimeout(() => setStatus(""), 1800);
+          };
+        });
+
+        tbody.querySelectorAll("button[data-rules]").forEach((b) => {
+          b.onclick = async () => {
+            // Force rules for one user by bumping global forceRulesAt (simple + reliable)
+            if (!confirm("Force rules re-accept now? (This will affect everyone in the class)")) return;
+            await commandsDoc(currentClassId).set(
+              { forceRulesAt: firebase.firestore.FieldValue.serverTimestamp() },
+              { merge: true }
+            );
+            setStatus("Triggered rules re-accept.");
+            setTimeout(() => setStatus(""), 1800);
+          };
+        });
+      })
+    );
   }
 
   // ===== banned users =====
@@ -262,8 +338,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const u = doc.data() || {};
           const tr = document.createElement("tr");
           tr.innerHTML = `
-            <td>${(u.name || "")}</td>
-            <td class="muted">${(u.userId || doc.id)}</td>
+            <td>${u.name || ""}</td>
+            <td class="muted">${u.userId || doc.id}</td>
             <td><button data-id="${doc.id}">Unban</button></td>
           `;
           tbody.appendChild(tr);
@@ -298,21 +374,20 @@ document.addEventListener("DOMContentLoaded", () => {
       announcementsCol(currentClassId).orderBy("timestamp", "desc").limit(30).onSnapshot((snap) => {
         const box = $("announcementsList");
         box.innerHTML = "";
-        snap.forEach((doc) => {
+        const docs = snap.docs.slice().reverse();
+        docs.forEach((doc) => {
           const a = doc.data() || {};
-          const t = a.timestamp && a.timestamp.toDate
-            ? a.timestamp.toDate().toLocaleString()
-            : "Sending...";
+          const t = a.timestamp && a.timestamp.toDate ? a.timestamp.toDate().toLocaleString() : "Sending...";
           const div = document.createElement("div");
           div.className = "msg";
-          div.innerHTML = `<div class="msgTop"><strong>${t}</strong></div><div>${a.text || ""}</div>`;
+          div.innerHTML = `<div><strong>${t}</strong></div><div>${a.text || ""}</div>`;
           box.appendChild(div);
         });
       })
     );
   }
 
-  // ===== live chat =====
+  // ===== live chat (delete individual messages) =====
   function wireLiveChat() {
     const chatBox = $("chatMessages");
 
@@ -321,7 +396,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!text) return;
 
       await messagesCol(currentClassId).add({
-        type: "text",
         name: "ADMIN",
         userId: "ADMIN",
         text,
@@ -336,28 +410,21 @@ document.addEventListener("DOMContentLoaded", () => {
       messagesCol(currentClassId).orderBy("timestamp", "desc").limit(80).onSnapshot((snap) => {
         chatBox.innerHTML = "";
         const docs = snap.docs.slice().reverse();
+
         docs.forEach((doc) => {
           const m = doc.data() || {};
           const t = m.timestamp && m.timestamp.toDate ? m.timestamp.toDate().toLocaleTimeString() : "Sending...";
           const div = document.createElement("div");
           div.className = "msg";
-
-          let body = "";
-          if (m.type === "image" && m.attachmentUrl) {
-            body = `
-              <div>${m.text || ""}</div>
-              <img class="preview" src="${m.attachmentUrl}" alt="img">
-            `;
-          } else {
-            body = `<div>${m.text || ""}</div>`;
-          }
-
           div.innerHTML = `
-            <div class="msgTop">
-              <div><strong>${m.name || ""}</strong> <span class="muted">(${m.userId || ""})</span></div>
+            <div class="row" style="justify-content:space-between;">
+              <div>
+                <strong>${m.name || ""}</strong>
+                <span class="muted">(${m.userId || ""})</span>
+              </div>
               <div class="muted">${t}</div>
             </div>
-            ${body}
+            <div style="margin-top:6px;">${m.text || ""}</div>
             <div class="row" style="margin-top:8px;">
               <button class="danger" data-del="${doc.id}">Delete</button>
             </div>
@@ -376,109 +443,5 @@ document.addEventListener("DOMContentLoaded", () => {
         chatBox.scrollTop = chatBox.scrollHeight;
       })
     );
-  }
-
-  // ===== pending attachments approval =====
-  function wirePendingAttachments() {
-    const wrap = $("pendingAttachments");
-
-    liveUnsubs.push(
-      pendingAttachmentsCol(currentClassId).orderBy("createdAt", "desc").limit(40).onSnapshot(async (snap) => {
-        wrap.innerHTML = "";
-
-        if (snap.empty) {
-          wrap.innerHTML = `<div class="muted">No pending attachments.</div>`;
-          return;
-        }
-
-        for (const doc of snap.docs) {
-          const a = doc.data() || {};
-          if (a.status !== "pending") continue;
-
-          const card = document.createElement("div");
-          card.className = "card";
-          card.style.marginTop = "10px";
-
-          let previewUrl = "";
-          try {
-            if (a.storagePath) previewUrl = await storage.ref().child(a.storagePath).getDownloadURL();
-          } catch {}
-
-          card.innerHTML = `
-            <div class="msgTop">
-              <div><strong>${a.uploaderName || "Unknown"}</strong> <span class="muted">(${a.uploaderId || ""})</span></div>
-              <div class="muted">${a.fileName || ""}</div>
-            </div>
-            <div class="muted" style="margin-top:6px;">Status: pending</div>
-            ${previewUrl ? `<img class="preview" src="${previewUrl}" alt="preview">` : `<div class="muted" style="margin-top:8px;">(No preview URL)</div>`}
-            <div class="row" style="margin-top:10px;">
-              <button data-approve="${doc.id}">Approve</button>
-              <button class="danger" data-reject="${doc.id}">Reject</button>
-            </div>
-          `;
-
-          wrap.appendChild(card);
-        }
-
-        wrap.querySelectorAll("button[data-approve]").forEach((b) => {
-          b.onclick = async () => {
-            const id = b.getAttribute("data-approve");
-            await approveAttachment(id);
-          };
-        });
-
-        wrap.querySelectorAll("button[data-reject]").forEach((b) => {
-          b.onclick = async () => {
-            const id = b.getAttribute("data-reject");
-            if (!confirm("Reject and delete this upload?")) return;
-            await rejectAttachment(id);
-          };
-        });
-      })
-    );
-  }
-
-  async function approveAttachment(uploadId) {
-    const ref = pendingAttachmentsCol(currentClassId).doc(uploadId);
-    const snap = await ref.get();
-    if (!snap.exists) return;
-
-    const a = snap.data() || {};
-    if (!a.storagePath) return;
-
-    // get download URL
-    const url = await storage.ref().child(a.storagePath).getDownloadURL();
-
-    // create approved message
-    await messagesCol(currentClassId).add({
-      type: "image",
-      name: a.uploaderName || "Unknown",
-      userId: a.uploaderId || "unknown",
-      text: "📷 Image",
-      attachmentUrl: url,
-      attachmentPath: a.storagePath,
-      replyTo: null,
-      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-
-    // mark approved
-    await ref.set({ status: "approved", approvedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    setStatus("Attachment approved.");
-    setTimeout(() => setStatus(""), 1800);
-  }
-
-  async function rejectAttachment(uploadId) {
-    const ref = pendingAttachmentsCol(currentClassId).doc(uploadId);
-    const snap = await ref.get();
-    if (!snap.exists) return;
-
-    const a = snap.data() || {};
-    try {
-      if (a.storagePath) await storage.ref().child(a.storagePath).delete();
-    } catch {}
-
-    await ref.set({ status: "rejected", rejectedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    setStatus("Attachment rejected.");
-    setTimeout(() => setStatus(""), 1800);
   }
 });
