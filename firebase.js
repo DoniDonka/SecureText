@@ -6,7 +6,7 @@ const firebaseConfig = {
   storageBucket: "text-d83ac.firebasestorage.app",
   messagingSenderId: "774345335493",
   appId: "1:774345335493:web:160763b83ed48f633d86ac",
-  measurementId: "G-H29FGNXQZQ"
+  measurementId: "G-H29FGNXQZQ",
 };
 
 // Initialize Firebase
@@ -15,3 +15,4 @@ firebase.initializeApp(firebaseConfig);
 // GLOBAL references
 const auth = firebase.auth();
 const db = firebase.firestore();
+const storage = firebase.storage();
