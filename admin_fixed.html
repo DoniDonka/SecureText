@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SecureText Admin</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .wrap{min-height:100vh;padding:22px;display:flex;justify-content:center}
+    .panel{width:min(1100px,96vw)}
+    .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:16px;margin-bottom:14px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    input,textarea{width:100%;padding:10px;border-radius:10px;border:none;background:#161b22;color:#fff}
+    textarea{min-height:90px;resize:vertical}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border-bottom:1px solid rgba(255,255,255,.08);padding:10px;text-align:left;font-size:.95rem}
+    th{opacity:.8}
+    .muted{opacity:.75}
+    .err{color:#ff6b6b;margin-top:8px}
+    .ok{color:#7dffb0;margin-top:8px}
+    .danger{background:#3b1111}
+    .danger:hover{filter:brightness(1.08)}
+    .controls-title{margin:0 0 10px 0;font-size:1.05rem}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:800;letter-spacing:.08em">ST <span class="muted">Admin</span></div>
+        <button type="button" onclick="location.href='index.html'">Back to app</button>
+      </div>
+
+      <!-- LOGIN -->
+      <div id="admin-login" class="card">
+        <h2 style="margin:0 0 10px 0">Admin Login</h2>
+        <div class="row">
+          <div style="flex:1;min-width:260px">
+            <div class="muted">Email</div>
+            <input id="adminEmail" type="email" autocomplete="username" />
+          </div>
+          <div style="flex:1;min-width:260px">
+            <div class="muted">Password</div>
+            <input id="adminPassword" type="password" autocomplete="current-password" />
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <button id="loginBtn" type="button">Login</button>
+          </div>
+        </div>
+        <div id="loginError" class="err"></div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <div id="admin-dashboard" style="display:none">
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <div id="adminInfo" class="muted"></div>
+            <button id="logoutBtn" type="button">Logout</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 10px 0">Select Class</h3>
+          <div id="classButtons" class="row"></div>
+          <div id="classError" class="err"></div>
+        </div>
+
+        <div id="admin-screen" style="display:none">
+          <div class="card">
+            <h3 id="classTitle" style="margin:0 0 6px 0"></h3>
+
+            <!-- NEW: Class Controls -->
+            <h4 class="controls-title">Class Controls</h4>
+            <div class="row">
+              <button id="forceRulesBtn" type="button">Force Rules Re-Accept (Everyone)</button>
+              <button id="forceLogoutBtn" type="button" class="danger">Force Logout Everyone</button>
+              <button id="deleteAllChatBtn" type="button" class="danger">Delete ALL Chat</button>
+              <button id="deleteAllAnnouncementsBtn" type="button" class="danger">Delete ALL Announcements</button>
+            </div>
+            <div id="adminActionStatus" class="muted" style="margin-top:10px"></div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px 0">Pending Users</h4>
+            <table id="pendingUsersTable">
+              <thead><tr><th>Name</th><th>Approve</th><th>Reject</th><th>Ban</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px 0">Banned Users</h4>
+            <table id="bannedUsersTable">
+              <thead><tr><th>Name</th><th>UserId</th><th>Unban</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px 0">Announcements</h4>
+            <div class="row">
+              <input id="announcementInput" type="text" placeholder="Announcement..." />
+              <button id="announceBtn" type="button">Send</button>
+            </div>
+            <div id="announcementsList" style="margin-top:10px"></div>
+          </div>
+
+          <div class="card">
+            <h4 style="margin:0 0 8px 0">Live Chat</h4>
+            <div id="chatMessages" style="max-height:320px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px"></div>
+            <div class="row" style="margin-top:10px">
+              <input id="adminChatInput" type="text" placeholder="Message as Admin..." />
+              <button id="adminSendBtn" type="button">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <script src="firebase.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

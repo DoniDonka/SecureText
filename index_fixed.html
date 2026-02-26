@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SecureText</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* minimal layout helpers (keeps your existing style.css intact) */
+    .screen{display:none}
+    .screen.active{display:block}
+    #root{min-height:100vh}
+    .center{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px;gap:12px}
+    .card{width:min(720px,94vw);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:18px}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .muted{opacity:.75}
+    .notice{margin-top:10px;opacity:.9}
+    .notice.warn{color:#ffd36b}
+    .notice.bad{color:#ff6b6b}
+    .topbar{display:flex;justify-content:space-between;align-items:center;width:min(900px,94vw);margin-bottom:10px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.08em}
+    .pill{opacity:.8;font-size:.85rem}
+    input{background:#161b22;color:#fff}
+    a{color:#8ab4ff}
+  </style>
+</head>
+<body>
+  <div id="root">
+    <!-- Screen: choose class -->
+    <section id="screen-class" class="screen active">
+      <div class="center">
+        <div class="topbar">
+          <div class="brand">ST <span class="pill muted">SecureText</span></div>
+          <button id="adminPathBtn" type="button" title="Admin Panel">ADMIN PATH</button>
+        </div>
+
+        <div class="card">
+          <h1 style="margin:0 0 6px 0">SecureText</h1>
+          <div class="muted">Choose your class to get started.</div>
+          <div id="classError" class="notice bad"></div>
+          <div id="classes" class="row" style="margin-top:12px">Loading…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: pin -->
+    <section id="screen-pin" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Enter PIN</h2>
+          <div class="muted">Class: <strong id="pinClassName"></strong></div>
+          <div style="margin-top:12px">
+            <label class="muted" for="pinInput">Class PIN</label><br/>
+            <input id="pinInput" type="password" autocomplete="one-time-code" style="width:min(420px,90%);padding:10px;border-radius:8px;border:none;margin-top:6px"/>
+          </div>
+          <div id="pinError" class="notice bad"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="pinBackBtn" type="button">Back</button>
+            <button id="pinContinueBtn" type="button">Continue</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: name -->
+    <section id="screen-name" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Your Name</h2>
+          <div class="muted">This is what others will see in chat.</div>
+          <div style="margin-top:12px">
+            <label class="muted" for="nameInput">Display name</label><br/>
+            <input id="nameInput" type="text" maxlength="28" style="width:min(420px,90%);padding:10px;border-radius:8px;border:none;margin-top:6px"/>
+          </div>
+          <div id="nameError" class="notice bad"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="nameBackBtn" type="button">Back</button>
+            <button id="nameContinueBtn" type="button">Request Access</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: waiting -->
+    <section id="screen-wait" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Waiting for Approval</h2>
+          <div id="waitText" class="muted">Keep this tab open — you’ll enter chat automatically once approved.</div>
+          <div id="waitStatus" class="notice warn"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="resetBtn" type="button">Start over</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: chat -->
+    <section id="screen-chat" class="screen">
+      <div id="chat-screen" class="night">
+        <div class="chat-header">
+          <div>
+            <h1 id="chatWelcome" style="margin:0">Welcome!</h1>
+            <p id="chatSubtitle" class="subtitle" style="margin:2px 0 0 0">SecureText chat</p>
+          </div>
+          <div class="chat-controls">
+            <button id="themeToggle" type="button">🌙</button>
+            <button id="logoutBtn" type="button">Logout</button>
+          </div>
+        </div>
+
+        <div id="announcementsBox">
+          <strong>Announcements</strong>
+          <div id="announcementsList"></div>
+        </div>
+
+        <div id="chatStatus" class="notice"></div>
+
+        <div id="messages" class="messages"></div>
+        <div id="typingIndicator" class="muted" style="margin:0 12px 10px 12px"></div>
+
+        <div id="chat-input">
+          <input id="msgInput" type="text" placeholder="Message…" autocomplete="off" />
+          <button id="sendBtn" type="button">Send</button>
+        </div>
+
+        <!-- Replies drawer (your app.js expects these ids when using replies) -->
+        <div id="repliesPanel" class="replies hidden">
+          <div class="replies-header">
+            <div class="muted"><span id="repliesTitle">Replies</span></div>
+            <button id="closeRepliesBtn" type="button">Close</button>
+          </div>
+          <div id="repliesList" class="replies-list"></div>
+          <div class="reply-input">
+            <input id="replyInput" type="text" placeholder="Reply…" autocomplete="off" />
+            <button id="sendReplyBtn" type="button">Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Firebase (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+  <!-- your config + app -->
+  <script src="firebase.js"></script>
+  <script src="app.js"></script>
+
+  <script>
+    // simple admin path button
+    (function(){
+      const btn = document.getElementById("adminPathBtn");
+      if (btn) btn.onclick = () => (window.location.href = "admin.html");
+    })();
+  </script>
+</body>
+</html>
