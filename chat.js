@@ -1,86 +1,59 @@
-// chat.js
+// chat.js (CLEANED - v8 CDN compatible, NO REACTIONS)
+// Safe helper module you can include later if you want.
+// Uses global `db` + `firebase` from firebase.js
 
-import { db, auth } from "./firebase.js";
-import { collection, addDoc, serverTimestamp, updateDoc, doc } from "firebase/firestore";
+(function () {
+  if (!window.db || !window.firebase) {
+    console.warn("chat.js: Firestore not found. Make sure firebase.js loads first.");
+    return;
+  }
 
-export async function sendMessage(classId, text, replyTo = null) {
-  await addDoc(collection(db, "classes", classId, "messages"), {
-    sender: auth.currentUser.uid,
-    text,
-    replyTo,
-    deleted: false,
-    timestamp: serverTimestamp()
-  });
-}
+  function classDocRef(classId) {
+    return db.collection("classes").doc(classId);
+  }
+  function messagesCol(classId) {
+    return classDocRef(classId).collection("messages");
+  }
+  function typingDoc(classId) {
+    // Matches the system used in app.js v2
+    return classDocRef(classId).collection("meta").doc("typing");
+  }
 
-export async function deleteMessage(classId, messageId) {
-  await updateDoc(doc(db, "classes", classId, "messages", messageId), {
-    deleted: true
-  });
-}
-export async function typing(classId, isTyping) {
-  await updateDoc(doc(db, "classes", classId, "typing", auth.currentUser.uid), {
-    typing: isTyping
-  });
-}
-import { doc, updateDoc, increment } from "firebase/firestore";
-import { db, auth } from "./firebase.js";
+  async function sendMessage(classId, { userId, name, text, replyTo = null }) {
+    const msg = String(text || "").trim();
+    if (!msg) return;
 
-export async function reactToMessage(classId, messageId, emoji) {
-  const uid = auth.currentUser.uid;
+    return messagesCol(classId).add({
+      userId: String(userId || ""),
+      name: String(name || "User"),
+      text: msg,
+      replyTo: replyTo || null,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  }
 
-  const ref = doc(db, "classes", classId, "messages", messageId);
+  // Soft-delete: marks message as deleted instead of deleting documents (saves reads)
+  async function softDeleteMessage(classId, messageId) {
+    if (!classId || !messageId) return;
+    return messagesCol(classId).doc(messageId).set(
+      {
+        deleted: true,
+        deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
 
-  await updateDoc(ref, {
-    [`reactions.${emoji}.${uid}`]: true
-  });
-}
+  // Typing: store boolean in meta/typing doc (single doc, low reads)
+  async function setTyping(classId, userId, isTyping) {
+    if (!classId || !userId) return;
+    return typingDoc(classId).set({ [userId]: !!isTyping }, { merge: true });
+  }
 
-export async function removeReaction(classId, messageId, emoji) {
-  const uid = auth.currentUser.uid;
-
-  const ref = doc(db, "classes", classId, "messages", messageId);
-
-  await updateDoc(ref, {
-    [`reactions.${emoji}.${uid}`]: false
-  });
-}
-export async function sendThreadMessage(classId, parentId, text) {
-  await addDoc(collection(db, "classes", classId, "threads"), {
-    parentId,
-    sender: auth.currentUser.uid,
-    text,
-    timestamp: Date.now()
-  });
-
-  await updateDoc(
-    doc(db, "classes", classId, "messages", parentId),
-    { threadCount: increment(1) }
-  );
-}
-export async function editMessage(classId, messageId, newText) {
-  await updateDoc(
-    doc(db, "classes", classId, "messages", messageId),
-    {
-      text: newText,
-      edited: true
-    }
-  );
-}
-export async function updatePresence(classId, online) {
-  await setDoc(
-    doc(db, "classes", classId, "presence", auth.currentUser.uid),
-    {
-      online,
-      lastSeen: Date.now()
-    }
-  );
-}
-export async function markSeen(classId, messageId) {
-  await updateDoc(
-    doc(db, "classes", classId, "messages", messageId),
-    {
-      [`seen.${auth.currentUser.uid}`]: true
-    }
-  );
-}
+  // Expose as a global helper (optional use)
+  window.ST_CHAT = {
+    sendMessage,
+    softDeleteMessage,
+    setTyping,
+  };
+})();
