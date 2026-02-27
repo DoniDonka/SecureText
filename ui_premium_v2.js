@@ -22,6 +22,7 @@
 
     const wrap = document.createElement("div");
     wrap.id = "premiumBg";
+    wrap.style.pointerEvents = "none";
     wrap.innerHTML = `
       <div class="bg-glow glow-1"></div>
       <div class="bg-glow glow-2"></div>
@@ -36,6 +37,7 @@
     const c = document.createElement("canvas");
     c.id = "fxBurstCanvas";
     c.className = "fx-burst-canvas";
+    c.style.pointerEvents = "none";
     document.body.appendChild(c);
 
     const toast = document.createElement("div");

@@ -1,3 +1,10 @@
+/* ===== EMERGENCY LAYER FIX (prevents background covering UI) ===== */
+#premiumBg{ z-index:0 !important; pointer-events:none !important; }
+#premiumBg *{ pointer-events:none !important; }
+#fxBurstCanvas, .fx-burst-canvas{ pointer-events:none !important; }
+#root{ position:relative !important; z-index:2 !important; }
+.toast-container{ z-index:999999 !important; pointer-events:none !important; }
+
 /* ---------------------------
    YOUR ORIGINAL CSS
 ---------------------------- */
