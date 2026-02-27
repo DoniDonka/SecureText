@@ -1,8 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // ===== helpers =====
+  // =========================
+  // DOM helpers
+  // =========================
   const $ = (id) => document.getElementById(id);
 
-  // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
     pin: $("screen-pin"),
@@ -11,29 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
     chat: $("screen-chat"),
   };
 
-  // Extra legacy full-screen nodes that might still exist (from older versions)
-  function hardHideEl(id) {
-    const el = $(id);
-    if (el) el.style.display = "none";
-  }
-  function hardShowEl(id) {
-    const el = $(id);
-    if (el) el.style.display = "";
-  }
-
   function showScreen(key) {
     Object.entries(screens).forEach(([k, el]) => {
       if (!el) return;
       el.classList.toggle("active", k === key);
     });
-
-    // Hide old nodes if present (prevents “double UIs” if you ever used them)
-    if (key === "class") {
-      hardHideEl("name-screen");
-      hardHideEl("waiting-screen");
-      hardHideEl("chat-screen-old");
-      hardHideEl("name-screen-old");
-    }
   }
 
   function escapeHtml(str) {
@@ -45,18 +28,32 @@ document.addEventListener("DOMContentLoaded", () => {
       .replaceAll("'", "&#039;");
   }
 
-  function setLS(obj) {
-    Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, String(v)));
-  }
-  function clearLS() {
-    localStorage.removeItem("classId");
-    localStorage.removeItem("className");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("userName");
-    // do NOT clear rules acceptance here unless you want it to re-ask next time
+  function setText(id, text) {
+    const el = $(id);
+    if (el) el.textContent = text || "";
   }
 
-  // Firestore refs (v8 compat)
+  // =========================
+  // Intro overlay (old UI)
+  // =========================
+  (function initIntro() {
+    const intro = $("introOverlay");
+    if (!intro) return;
+    // Let your old animation play a moment, then fade out smoothly
+    setTimeout(() => {
+      intro.style.opacity = "0";
+      intro.style.transition = "opacity .35s ease";
+      setTimeout(() => {
+        try {
+          intro.remove();
+        } catch { }
+      }, 380);
+    }, 850);
+  })();
+
+  // =========================
+  // Firestore refs (v8)
+  // =========================
   function classDocRef(classId) {
     return db.collection("classes").doc(classId);
   }
@@ -75,8 +72,30 @@ document.addEventListener("DOMContentLoaded", () => {
   function typingDoc(classId) {
     return classDocRef(classId).collection("meta").doc("typing");
   }
+  function presenceDoc(classId) {
+    return classDocRef(classId).collection("meta").doc("presence");
+  }
+  function commandsDoc(classId) {
+    return classDocRef(classId).collection("meta").doc("commands");
+  }
 
-  // Rules acceptance per (classId + userId)
+  // =========================
+  // Local storage (session)
+  // =========================
+  function setLS(obj) {
+    Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, String(v)));
+  }
+  function getLS(k) {
+    return localStorage.getItem(k);
+  }
+  function clearSessionLS() {
+    localStorage.removeItem("classId");
+    localStorage.removeItem("className");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("userName");
+  }
+
+  // Rules acceptance per class+user
   function rulesKey(classId, userId) {
     return `rulesAccepted_${classId}_${userId}`;
   }
@@ -87,73 +106,46 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem(rulesKey(classId, userId), "true");
   }
 
-  // ===== Notifications (permission + smart notify) =====
-  const NOTIF_ASK_KEY = "st_notif_asked";
-  function requestNotificationPermissionOnce() {
-    try {
-      if (!("Notification" in window)) return;
-      if (localStorage.getItem(NOTIF_ASK_KEY) === "1") return;
-      if (Notification.permission === "default") {
-        localStorage.setItem(NOTIF_ASK_KEY, "1");
-        Notification.requestPermission().catch(() => { });
-      } else {
-        localStorage.setItem(NOTIF_ASK_KEY, "1");
-      }
-    } catch { }
-  }
-
-  function maybeNotifyNewMessage({ className, from, text }) {
-    try {
-      if (!("Notification" in window)) return;
-      if (Notification.permission !== "granted") return;
-      if (!document.hidden) return; // A: only when tab is not focused
-
-      const body = text.length > 140 ? text.slice(0, 140) + "…" : text;
-      new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
-    } catch { }
-  }
-
-  // ===== Settings: Theme + Sound =====
+  // =========================
+  // Settings (Theme + Sound)
+  // =========================
   const SETTINGS_KEY = "st_settings_v2";
   const DEFAULT_SETTINGS = { theme: "night", sound: true };
 
-  function getSettingsState() {
+  function getSettings() {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (!raw) return { ...DEFAULT_SETTINGS };
-      const parsed = JSON.parse(raw);
+      const p = JSON.parse(raw);
       return {
-        theme: parsed.theme === "day" ? "day" : "night",
-        sound: parsed.sound !== false,
+        theme: p.theme === "day" ? "day" : "night",
+        sound: p.sound !== false,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
   }
-
-  function setSettingsState(next) {
+  function setSettings(next) {
     try {
       localStorage.setItem(
         SETTINGS_KEY,
-        JSON.stringify({
-          theme: next.theme === "day" ? "day" : "night",
-          sound: !!next.sound,
-        })
+        JSON.stringify({ theme: next.theme === "day" ? "day" : "night", sound: !!next.sound })
       );
     } catch { }
   }
 
   function applyTheme(mode) {
-    const screen = $("chat-screen");
-    const mode2 = mode === "day" ? "day" : "night";
-    if (screen) {
-      screen.classList.remove("day", "night");
-      screen.classList.add(mode2);
-    }
+    const cs = $("chat-screen");
+    if (!cs) return;
+    cs.classList.remove("day", "night");
+    cs.classList.add(mode === "day" ? "day" : "night");
+    // Keep your existing button icon updated if present
+    const tbtn = $("themeToggle");
+    if (tbtn) tbtn.textContent = mode === "day" ? "☀️" : "🌙";
   }
 
-  // ===== Sounds (no external files; tiny synth) =====
-  let soundEnabled = getSettingsState().sound;
+  // Tiny synth sounds (no external files)
+  let soundEnabled = getSettings().sound;
   function setSoundEnabled(v) {
     soundEnabled = !!v;
   }
@@ -167,22 +159,19 @@ document.addEventListener("DOMContentLoaded", () => {
       g.connect(ctx.destination);
 
       const now = ctx.currentTime;
-      let freq = 440;
+      let freq = 520;
       let dur = 0.07;
 
       if (type === "send") {
         freq = 620;
         dur = 0.06;
-      }
-      if (type === "receive") {
+      } else if (type === "receive") {
         freq = 520;
         dur = 0.07;
-      }
-      if (type === "approve") {
+      } else if (type === "approve") {
         freq = 740;
         dur = 0.1;
-      }
-      if (type === "deny") {
+      } else if (type === "deny") {
         freq = 220;
         dur = 0.09;
       }
@@ -202,10 +191,46 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch { }
   }
 
-  // ===== Settings modal UI =====
-  function openSettingsModal({ theme, sound, onChange }) {
+  // Settings modal (inject)
+  function ensureEnhancedStylesOnce() {
+    if (document.getElementById("stEnhancedStyles")) return;
+    const css = document.createElement("style");
+    css.id = "stEnhancedStyles";
+    css.textContent = `
+      .st-overlay{position:fixed;inset:0;z-index:999999;display:grid;place-items:center;background:rgba(0,0,0,.70);backdrop-filter:blur(10px);padding:16px;animation:stFade .12s ease}
+      @keyframes stFade{from{opacity:0}to{opacity:1}}
+      .st-modal{width:min(520px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);overflow:hidden}
+      .st-modal-top{display:flex;justify-content:space-between;align-items:center;padding:14px 14px;border-bottom:1px solid rgba(255,255,255,.10)}
+      .st-modal-title{font-weight:800;letter-spacing:.04em}
+      .st-icon-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;border-radius:10px;padding:6px 10px;cursor:pointer}
+      .st-modal-body{padding:14px 14px}
+      .st-setting-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0}
+      .st-setting-name{font-weight:800}
+      .st-setting-desc{font-size:.85rem;opacity:.75}
+      .st-pill-btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
+      .st-divider{height:1px;background:rgba(255,255,255,.10);margin:10px 0}
+      .typing-bubble{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.10);padding:6px 10px;border-radius:999px}
+      .typing-bubble .dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.85);display:inline-block;animation:stDot 1s infinite}
+      .typing-bubble .dot:nth-child(2){animation-delay:.12s}
+      .typing-bubble .dot:nth-child(3){animation-delay:.24s}
+      @keyframes stDot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-4px);opacity:1}}
+      .st-lock{position:fixed;inset:0;z-index:999998;display:none;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);padding:16px}
+      .st-lock.active{display:grid;animation:stFade .12s ease}
+      .st-lock-card{width:min(620px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);padding:18px}
+      .st-lock-title{font-weight:900;letter-spacing:.10em}
+      .st-lock-msg{margin-top:8px;opacity:.85;line-height:1.35rem}
+      .online-badge{display:inline-block;margin-left:10px;font-size:.85rem;opacity:.8}
+    `;
+    document.head.appendChild(css);
+  }
+
+  function openSettingsModal() {
+    ensureEnhancedStylesOnce();
+
     const old = document.getElementById("stSettingsOverlay");
     if (old) old.remove();
+
+    let st = getSettings();
 
     const overlay = document.createElement("div");
     overlay.id = "stSettingsOverlay";
@@ -216,12 +241,11 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="st-modal-title">Settings</div>
           <button id="stSettingsClose" class="st-icon-btn" type="button">✕</button>
         </div>
-
         <div class="st-modal-body">
           <div class="st-setting-row">
             <div>
               <div class="st-setting-name">Theme</div>
-              <div class="st-setting-desc muted">Day / Night mode</div>
+              <div class="st-setting-desc">Day / Night mode</div>
             </div>
             <button id="stThemeBtn" class="st-pill-btn" type="button"></button>
           </div>
@@ -229,19 +253,42 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="st-setting-row">
             <div>
               <div class="st-setting-name">Sounds</div>
-              <div class="st-setting-desc muted">Send / receive effects</div>
+              <div class="st-setting-desc">Send / receive effects</div>
             </div>
             <button id="stSoundBtn" class="st-pill-btn" type="button"></button>
           </div>
 
           <div class="st-divider"></div>
-          <div class="muted" style="font-size:.85rem;line-height:1.25rem">
-            Notifications are only shown when this tab isn’t focused.
-          </div>
+          <div class="st-setting-desc">Notifications only appear when this tab isn’t focused.</div>
         </div>
       </div>
     `;
     document.body.appendChild(overlay);
+
+    const themeBtn = overlay.querySelector("#stThemeBtn");
+    const soundBtn = overlay.querySelector("#stSoundBtn");
+
+    function render() {
+      themeBtn.textContent = st.theme === "day" ? "☀️ Day" : "🌙 Night";
+      soundBtn.textContent = st.sound ? "🔊 On" : "🔇 Off";
+    }
+    render();
+
+    themeBtn.onclick = () => {
+      st.theme = st.theme === "day" ? "night" : "day";
+      setSettings(st);
+      applyTheme(st.theme);
+      render();
+      playSound("send");
+    };
+
+    soundBtn.onclick = () => {
+      st.sound = !st.sound;
+      setSettings(st);
+      setSoundEnabled(st.sound);
+      render();
+      playSound(st.sound ? "send" : "deny");
+    };
 
     const close = () => {
       try {
@@ -249,88 +296,74 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch { }
     };
 
-    const themeBtn = overlay.querySelector("#stThemeBtn");
-    const soundBtn = overlay.querySelector("#stSoundBtn");
-    const closeBtn = overlay.querySelector("#stSettingsClose");
-
-    function render() {
-      themeBtn.textContent = theme === "day" ? "☀️ Day" : "🌙 Night";
-      soundBtn.textContent = sound ? "🔊 On" : "🔇 Off";
-    }
-    render();
-
-    themeBtn.onclick = () => {
-      theme = theme === "day" ? "night" : "day";
-      render();
-      onChange({ theme, sound });
-      playSound("send");
-    };
-    soundBtn.onclick = () => {
-      sound = !sound;
-      render();
-      onChange({ theme, sound });
-      playSound(sound ? "send" : "deny");
-    };
-
-    if (closeBtn) closeBtn.onclick = close;
+    overlay.querySelector("#stSettingsClose").onclick = close;
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) close();
     });
-    window.addEventListener("keydown", function esc(e) {
-      if (e.key === "Escape") {
-        window.removeEventListener("keydown", esc);
-        close();
+    window.addEventListener(
+      "keydown",
+      function esc(e) {
+        if (e.key === "Escape") {
+          window.removeEventListener("keydown", esc);
+          close();
+        }
+      },
+      { once: true }
+    );
+  }
+
+  function ensureSettingsButton() {
+    // Put ⚙ next to logout, keep your existing themeToggle too
+    const controls = document.querySelector(".chat-controls");
+    if (!controls) return;
+
+    if ($("settingsBtn")) return;
+
+    const btn = document.createElement("button");
+    btn.id = "settingsBtn";
+    btn.type = "button";
+    btn.title = "Settings";
+    btn.textContent = "⚙️";
+    btn.style.marginLeft = "8px";
+    controls.insertBefore(btn, $("logoutBtn") || null);
+    btn.onclick = openSettingsModal;
+  }
+
+  // =========================
+  // Notifications (A: only when tab not focused)
+  // =========================
+  const NOTIF_ASK_KEY = "st_notif_asked";
+  function requestNotificationPermissionOnce() {
+    try {
+      if (!("Notification" in window)) return;
+      if (localStorage.getItem(NOTIF_ASK_KEY) === "1") return;
+
+      localStorage.setItem(NOTIF_ASK_KEY, "1");
+
+      if (Notification.permission === "default") {
+        Notification.requestPermission().catch(() => { });
       }
-    });
+    } catch { }
   }
 
-  // ===== Enhanced styles for new UI bits (typing dots, modal, lock overlay) =====
-  let enhancedStylesInjected = false;
-  function ensureEnhancedStyles() {
-    if (enhancedStylesInjected) return;
-    enhancedStylesInjected = true;
+  function maybeNotify({ className, from, text }) {
+    try {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+      if (!document.hidden) return; // A
 
-    const css = `
-      .online-badge{margin-top:6px;display:inline-block;font-size:.85rem;opacity:.85}
-      .typing-bubble{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.10);padding:6px 10px;border-radius:999px}
-      .typing-bubble .dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.85);display:inline-block;animation:stDot 1s infinite}
-      .typing-bubble .dot:nth-child(2){animation-delay:.12s}
-      .typing-bubble .dot:nth-child(3){animation-delay:.24s}
-      @keyframes stDot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-4px);opacity:1}}
-      .st-overlay{position:fixed;inset:0;z-index:999999;display:grid;place-items:center;background:rgba(0,0,0,.70);backdrop-filter:blur(10px);padding:16px;animation:stFade .12s ease}
-      @keyframes stFade{from{opacity:0}to{opacity:1}}
-      .st-modal{width:min(520px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);overflow:hidden}
-      .st-modal-top{display:flex;justify-content:space-between;align-items:center;padding:14px 14px;border-bottom:1px solid rgba(255,255,255,.10)}
-      .st-modal-title{font-weight:700;letter-spacing:.04em}
-      .st-icon-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;border-radius:10px;padding:6px 10px;cursor:pointer}
-      .st-modal-body{padding:14px 14px}
-      .st-setting-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0}
-      .st-setting-name{font-weight:700}
-      .st-setting-desc{font-size:.85rem}
-      .st-pill-btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
-      .st-divider{height:1px;background:rgba(255,255,255,.10);margin:10px 0}
-      .st-lock{position:fixed;inset:0;z-index:999998;display:none;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);padding:16px}
-      .st-lock.active{display:grid;animation:stFade .12s ease}
-      .st-lock-card{width:min(620px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);padding:18px}
-      .st-lock-title{font-weight:800;letter-spacing:.06em}
-      .st-lock-msg{margin-top:8px;opacity:.85;line-height:1.35rem}
-      .st-statusflash{animation:stStatus .18s ease}
-      @keyframes stStatus{from{transform:translateY(-3px);opacity:.2}to{transform:translateY(0);opacity:1}}
-    `;
-
-    const tag = document.createElement("style");
-    tag.textContent = css;
-    document.head.appendChild(tag);
+      const body = (text || "").length > 140 ? (text || "").slice(0, 140) + "…" : (text || "");
+      new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
+    } catch { }
   }
 
-  // ===== Lock overlay =====
+  // =========================
+  // Lock overlay
+  // =========================
   let chatLocked = false;
-  function isChatLocked() {
-    return !!chatLocked;
-  }
   function setChatLocked(val, msg) {
     chatLocked = !!val;
-    ensureEnhancedStyles();
+    ensureEnhancedStylesOnce();
 
     let lock = document.getElementById("stLockOverlay");
     if (!lock) {
@@ -341,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="st-lock-card">
           <div class="st-lock-title">CHAT LOCKED</div>
           <div id="stLockMsg" class="st-lock-msg">Chat is temporarily locked by admin.</div>
-          <div class="muted" style="margin-top:10px;font-size:.85rem">You’ll be able to chat again automatically when it unlocks.</div>
+          <div style="margin-top:10px;opacity:.75;font-size:.85rem">You’ll be able to chat again automatically when it unlocks.</div>
         </div>
       `;
       document.body.appendChild(lock);
@@ -352,348 +385,49 @@ document.addEventListener("DOMContentLoaded", () => {
     lock.classList.toggle("active", chatLocked);
   }
 
-  function flashStatus(text, kind) {
-    const el = $("chatStatus");
-    if (!el) return;
-
-    el.textContent = text || "";
-    el.classList.remove("bad", "warn");
-    if (kind === "bad") el.classList.add("bad");
-    if (kind === "warn") el.classList.add("warn");
-
-    el.classList.add("st-statusflash");
-    setTimeout(() => {
-      try {
-        el.classList.remove("st-statusflash");
-      } catch { }
-    }, 240);
+  // =========================
+  // Listener manager
+  // =========================
+  let unsubs = [];
+  function addUnsub(fn) {
+    if (typeof fn === "function") unsubs.push(fn);
   }
-
-  // ===== Presence (online counter only) =====
-  let presenceTimer = null;
-  let presenceUnsub = null;
-  function presenceDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("presence");
-  }
-
-  function startPresence({ classId, userId, onCount }) {
-    stopPresence();
-    const ref = presenceDoc(classId);
-
-    const beat = async () => {
+  function clearListeners() {
+    unsubs.forEach((u) => {
       try {
-        await ref.set(
-          { [userId]: firebase.firestore.FieldValue.serverTimestamp() },
-          { merge: true }
-        );
+        u();
       } catch { }
-    };
-
-    beat();
-    presenceTimer = setInterval(beat, 30000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) beat();
     });
-
-    presenceUnsub = ref.onSnapshot((doc) => {
-      const data = doc && doc.exists ? doc.data() || {} : {};
-      const now = Date.now();
-      const TTL = 90000;
-
-      let count = 0;
-      Object.values(data).forEach((v) => {
-        let ms = 0;
-        if (!v) return;
-        if (typeof v === "number") ms = v;
-        else if (v.toDate) ms = v.toDate().getTime();
-        if (ms && now - ms <= TTL) count++;
-      });
-
-      if (typeof onCount === "function") onCount(count);
-    });
-
-    if (presenceUnsub) chatUnsubs.push(presenceUnsub);
+    unsubs = [];
   }
 
-  function stopPresence() {
-    if (presenceTimer) {
-      clearInterval(presenceTimer);
-      presenceTimer = null;
-    }
-    if (presenceUnsub) {
-      try {
-        presenceUnsub();
-      } catch { }
-      presenceUnsub = null;
-    }
-  }
-
-  // ===== Admin Commands =====
-  function commandsDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("commands");
-  }
-
-  function startCommandsListener({
-    classId,
-    userId,
-    onLogout,
-    onRerules,
-    onLock,
-    onRefresh,
-    onTheme,
-  }) {
-    const ref = commandsDoc(classId);
-    const keyBase = `st_cmd_${classId}_`;
-
-    const unsub = ref.onSnapshot((doc) => {
-      const data = doc && doc.exists ? doc.data() || {} : {};
-
-      const logoutNonce = Number(data.logoutNonce || 0);
-      const rulesNonce = Number(data.rulesNonce || 0);
-      const refreshNonce = Number(data.refreshNonce || 0);
-
-      const lastLogout = Number(sessionStorage.getItem(keyBase + "logout") || "0");
-      const lastRules = Number(sessionStorage.getItem(keyBase + "rules") || "0");
-      const lastRef = Number(sessionStorage.getItem(keyBase + "refresh") || "0");
-
-      if (logoutNonce > lastLogout) {
-        sessionStorage.setItem(keyBase + "logout", String(logoutNonce));
-        if (typeof onLogout === "function") onLogout();
-      }
-      if (rulesNonce > lastRules) {
-        sessionStorage.setItem(keyBase + "rules", String(rulesNonce));
-        if (typeof onRerules === "function") onRerules();
-      }
-      if (refreshNonce > lastRef) {
-        sessionStorage.setItem(keyBase + "refresh", String(refreshNonce));
-        if (typeof onRefresh === "function") onRefresh();
-      }
-
-      if (typeof onLock === "function") onLock(!!data.locked, data.lockMessage || "");
-
-      if (typeof onTheme === "function" && (data.theme === "day" || data.theme === "night")) {
-        onTheme(data.theme);
-      }
-    });
-
-    if (unsub) chatUnsubs.push(unsub);
-  }
-
-  function forceReRules({ classId, userId, userName, className }) {
-    try {
-      localStorage.removeItem(rulesKey(classId, userId));
-    } catch { }
-    showRulesGate({ classId, userId, userName, className }, () => { });
-  }
-
-  function forceLogoutToClassScreen({ reason }) {
-    try {
-      setChatLocked(false, "");
-    } catch { }
-    stopPresence();
-    clearChatListeners();
-    clearLS();
-
-    selectedClassId = null;
-    selectedClassName = null;
-
-    showScreen("class");
-    try {
-      loadClasses();
-    } catch { }
-  }
-
-  // ===== RULES GATE OVERLAY (already in your app, upgraded to request notifications) =====
-  function showRulesGate({ classId, userId, userName, className }, onContinue) {
-    if (hasAcceptedRules(classId, userId)) {
-      onContinue();
-      return;
-    }
-
-    // Confetti once
-    try {
-      if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
-        window.ST_UI.confettiBurst(1400);
-      }
-    } catch { }
-
-    const root = $("root") || document.body;
-
-    const old = document.getElementById("rulesGateOverlay");
-    if (old) old.remove();
-
-    const overlay = document.createElement("div");
-    overlay.id = "rulesGateOverlay";
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.zIndex = "99999";
-    overlay.style.display = "grid";
-    overlay.style.placeItems = "center";
-    overlay.style.padding = "16px";
-    overlay.style.background =
-      "radial-gradient(1200px 700px at 20% 10%, rgba(255,90,90,.10), transparent 60%)," +
-      "radial-gradient(900px 600px at 85% 20%, rgba(255,211,107,.10), transparent 55%)," +
-      "rgba(0,0,0,.78)";
-    overlay.style.backdropFilter = "blur(10px)";
-    overlay.style.pointerEvents = "all";
-
-    const card = document.createElement("div");
-    card.style.width = "min(860px, 96vw)";
-    card.style.borderRadius = "18px";
-    card.style.border = "1px solid rgba(255,255,255,.12)";
-    card.style.background = "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
-    card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
-    card.style.padding = "22px 22px 18px 22px";
-    card.style.position = "relative";
-    card.style.overflow = "hidden";
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "800";
-    title.style.letterSpacing = ".08em";
-    title.style.fontSize = "1.12rem";
-    title.textContent = "RULES";
-
-    const sub = document.createElement("div");
-    sub.className = "muted";
-    sub.style.marginTop = "6px";
-    sub.style.lineHeight = "1.35rem";
-    sub.innerHTML = `Class: <strong>${escapeHtml(className || classId)}</strong><br/>Welcome, <strong>${escapeHtml(
-      userName || "User"
-    )}</strong>`;
-
-    const rules = document.createElement("div");
-    rules.style.marginTop = "14px";
-    rules.style.border = "1px solid rgba(255,255,255,.10)";
-    rules.style.borderRadius = "14px";
-    rules.style.padding = "12px 14px";
-    rules.style.background = "rgba(0,0,0,.35)";
-    rules.style.lineHeight = "1.45rem";
-    rules.innerHTML = `
-      <div style="opacity:.92">
-        • Be respectful.<br/>
-        • No spam / no harassment.<br/>
-        • Keep it class-appropriate.<br/>
-        • Admin can remove messages / lock chat if needed.
-      </div>
-    `;
-
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.justifyContent = "space-between";
-    row.style.alignItems = "center";
-    row.style.gap = "12px";
-    row.style.marginTop = "14px";
-    row.style.flexWrap = "wrap";
-
-    const left = document.createElement("div");
-    left.style.display = "flex";
-    left.style.alignItems = "center";
-    left.style.gap = "10px";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = "rulesCheck";
-    checkbox.style.transform = "scale(1.1)";
-    checkbox.style.cursor = "pointer";
-
-    const label = document.createElement("label");
-    label.htmlFor = "rulesCheck";
-    label.className = "muted";
-    label.style.cursor = "pointer";
-    label.textContent = "I understand and agree to follow the rules.";
-
-    left.appendChild(checkbox);
-    left.appendChild(label);
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Continue";
-    btn.disabled = true;
-
-    let secs = 2;
-    const tick = () => {
-      if (!checkbox.checked) {
-        btn.disabled = true;
-        btn.textContent = `Continue (${secs})`;
-        return;
-      }
-      btn.disabled = false;
-      btn.textContent = "Continue";
-    };
-
-    btn.textContent = `Continue (${secs})`;
-    const interval = setInterval(() => {
-      secs = Math.max(0, secs - 1);
-      if (secs === 0) {
-        tick();
-        clearInterval(interval);
-      } else {
-        tick();
-      }
-    }, 1000);
-
-    checkbox.addEventListener("change", tick);
-    tick();
-
-    btn.onclick = () => {
-      if (btn.disabled) return;
-      try {
-        clearInterval(interval);
-      } catch { }
-      setAcceptedRules(classId, userId);
-
-      // Ask for browser notifications once, right after rules acceptance
-      requestNotificationPermissionOnce();
-
-      overlay.style.opacity = "0";
-      overlay.style.transition = "opacity .18s ease";
-      overlay.style.pointerEvents = "none";
-      setTimeout(() => {
-        try {
-          overlay.remove();
-        } catch { }
-        onContinue();
-      }, 180);
-    };
-
-    row.appendChild(left);
-    row.appendChild(btn);
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(rules);
-    card.appendChild(row);
-
-    overlay.appendChild(card);
-    root.appendChild(overlay);
-  }
-
-  // ===== state =====
+  // =========================
+  // State
+  // =========================
   let selectedClassId = null;
   let selectedClassName = null;
 
-  // ===== restore session on refresh =====
-  const savedClassId = localStorage.getItem("classId");
-  const savedUserId = localStorage.getItem("userId");
-  const savedName = localStorage.getItem("userName");
-  const savedClassName = localStorage.getItem("className");
+  const savedClassId = getLS("classId");
+  const savedClassName = getLS("className");
+  const savedUserId = getLS("userId");
+  const savedUserName = getLS("userName");
 
-  // ===== CLASSES FLOW =====
+  // =========================
+  // Load classes (still a read — but persistence will help a lot)
+  // =========================
   async function loadClasses() {
-    const classesDiv = $("classes");
-    const classError = $("classError");
-    if (classError) classError.textContent = "";
-    if (!classesDiv) return;
+    const box = $("classes");
+    setText("classError", "");
+    if (!box) return;
 
-    classesDiv.textContent = "Loading…";
+    box.innerHTML = `<div class="muted">Loading…</div>`;
 
     try {
       const snap = await db.collection("classes").get();
-      classesDiv.innerHTML = "";
+      box.innerHTML = "";
 
       if (snap.empty) {
-        classesDiv.innerHTML = `<div class="muted">No classes found.</div>`;
+        box.innerHTML = `<div class="muted">No classes found.</div>`;
         return;
       }
 
@@ -701,90 +435,87 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = doc.data() || {};
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = data.name || doc.id;
+        btn.className = "classBtn";
+        btn.innerHTML = `<span>${escapeHtml(data.name || doc.id)}</span><span class="chip">Join</span>`;
+
         btn.onclick = () => {
           selectedClassId = doc.id;
           selectedClassName = data.name || doc.id;
-
-          const pinName = $("pinClassName");
-          if (pinName) pinName.textContent = selectedClassName;
-
+          setText("pinClassName", selectedClassName);
           showScreen("pin");
         };
-        classesDiv.appendChild(btn);
+
+        box.appendChild(btn);
       });
     } catch (e) {
-      if (classError) classError.textContent = "Failed to load classes.";
-      classesDiv.textContent = "";
+      box.innerHTML = "";
+      setText("classError", "Failed to load classes.");
     }
   }
 
-  // PIN screen
+  // =========================
+  // Buttons: pin/name/wait
+  // =========================
   const pinBackBtn = $("pinBackBtn");
   const pinContinueBtn = $("pinContinueBtn");
   const pinInput = $("pinInput");
-  const pinError = $("pinError");
 
   if (pinBackBtn) pinBackBtn.onclick = () => showScreen("class");
 
   if (pinContinueBtn) {
     pinContinueBtn.onclick = async () => {
+      setText("pinError", "");
       if (!selectedClassId) return;
-      if (pinError) pinError.textContent = "";
 
-      const pin = (pinInput && pinInput.value ? pinInput.value : "").trim();
+      const pin = String(pinInput?.value || "").trim();
       if (!pin) {
-        if (pinError) pinError.textContent = "Enter the class PIN.";
+        setText("pinError", "Enter the class PIN.");
         return;
       }
 
       try {
-        const clsDoc = await classDocRef(selectedClassId).get();
-        if (!clsDoc.exists) {
-          if (pinError) pinError.textContent = "Class not found.";
+        const cls = await classDocRef(selectedClassId).get();
+        if (!cls.exists) {
+          setText("pinError", "Class not found.");
           return;
         }
-        const data = clsDoc.data() || {};
+        const data = cls.data() || {};
         const correctPin = String(data.pin || "").trim();
-        if (String(pin) !== correctPin) {
-          if (pinError) pinError.textContent = "Incorrect PIN.";
+        if (pin !== correctPin) {
+          setText("pinError", "Incorrect PIN.");
           return;
         }
-
         showScreen("name");
       } catch {
-        if (pinError) pinError.textContent = "PIN check failed.";
+        setText("pinError", "PIN check failed.");
       }
     };
   }
 
-  // NAME screen
   const nameBackBtn = $("nameBackBtn");
   const nameContinueBtn = $("nameContinueBtn");
   const nameInput = $("nameInput");
-  const nameError = $("nameError");
 
   if (nameBackBtn) nameBackBtn.onclick = () => showScreen("pin");
 
   if (nameContinueBtn) {
     nameContinueBtn.onclick = async () => {
+      setText("nameError", "");
       if (!selectedClassId) return;
-      if (nameError) nameError.textContent = "";
 
-      const name = (nameInput && nameInput.value ? nameInput.value : "").trim();
+      const name = String(nameInput?.value || "").trim();
       if (!name) {
-        if (nameError) nameError.textContent = "Enter your name.";
+        setText("nameError", "Enter your name.");
         return;
       }
 
-      // Make a stable userId (per browser per class)
-      const userId = localStorage.getItem("userId") || Math.random().toString(36).slice(2, 12);
+      const userId = getLS("userId") || Math.random().toString(36).slice(2, 12);
 
       try {
-        // banned check
-        const bannedDoc = await bannedRef(selectedClassId, userId).get();
-        if (bannedDoc.exists) {
-          showDenied("You are banned.");
+        const b = await bannedRef(selectedClassId, userId).get();
+        if (b.exists) {
+          showScreen("wait");
+          setText("waitStatus", "You are banned.");
           return;
         }
 
@@ -801,101 +532,169 @@ document.addEventListener("DOMContentLoaded", () => {
           userName: name,
         });
 
-        showWaiting();
+        showScreen("wait");
+        setText("waitStatus", "Waiting for admin approval…");
         watchStatus({ classId: selectedClassId, userId, name });
-      } catch (e) {
-        if (nameError) nameError.textContent = "Request failed.";
+      } catch {
+        setText("nameError", "Request failed.");
       }
     };
   }
 
-  function showWaiting() {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = "";
-    showScreen("wait");
-  }
-
-  function showDenied(msg) {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = msg || "You cannot join.";
-    showScreen("wait");
-  }
-
-  // Restore flow
-  function restoreFlow() {
-    if (savedClassId && savedUserId && savedName) {
-      selectedClassId = savedClassId;
-      selectedClassName = savedClassName || savedClassId;
-
-      showWaiting();
-      watchStatus({ classId: savedClassId, userId: savedUserId, name: savedName });
-    } else {
+  const resetBtn = $("resetBtn");
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      clearListeners();
+      clearSessionLS();
+      selectedClassId = null;
+      selectedClassName = null;
       showScreen("class");
       loadClasses();
-    }
+    };
   }
 
-  // Watch approval status (pendingUsers doc)
+  // =========================
+  // Rules gate overlay (keeps vibe; asks notif permission after accept)
+  // =========================
+  function showRulesGate({ classId, userId, userName, className }, onContinue) {
+    if (hasAcceptedRules(classId, userId)) {
+      onContinue();
+      return;
+    }
+
+    // Confetti if your old confetti system exists
+    try {
+      if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
+        window.ST_UI.confettiBurst(1200);
+      }
+    } catch { }
+
+    const old = document.getElementById("rulesGateOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "rulesGateOverlay";
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "99999";
+    overlay.style.display = "grid";
+    overlay.style.placeItems = "center";
+    overlay.style.padding = "16px";
+    overlay.style.background = "rgba(0,0,0,.78)";
+    overlay.style.backdropFilter = "blur(10px)";
+
+    const card = document.createElement("div");
+    card.style.width = "min(860px, 96vw)";
+    card.style.borderRadius = "18px";
+    card.style.border = "1px solid rgba(255,255,255,.12)";
+    card.style.background = "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
+    card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
+    card.style.padding = "22px";
+
+    card.innerHTML = `
+      <div style="font-weight:900;letter-spacing:.10em">RULES</div>
+      <div style="opacity:.75;margin-top:8px;line-height:1.35rem">
+        Class: <strong>${escapeHtml(className || classId)}</strong><br/>
+        Welcome, <strong>${escapeHtml(userName || "User")}</strong>
+      </div>
+      <div style="margin-top:14px;border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px;background:rgba(0,0,0,.35);line-height:1.55rem;opacity:.92">
+        • Be respectful.<br/>
+        • No spam / harassment.<br/>
+        • Keep it class-appropriate.<br/>
+        • Admin can lock chat if needed.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
+        <input id="rulesCheck" type="checkbox" style="transform:scale(1.1)"/>
+        <label for="rulesCheck" style="opacity:.8;cursor:pointer">I understand and agree.</label>
+        <button id="rulesContinue" type="button" style="margin-left:auto;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:#fff;padding:10px 14px;cursor:pointer" disabled>
+          Continue (2)
+        </button>
+      </div>
+    `;
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const check = overlay.querySelector("#rulesCheck");
+    const btn = overlay.querySelector("#rulesContinue");
+
+    let secs = 2;
+    const timer = setInterval(() => {
+      secs = Math.max(0, secs - 1);
+      if (secs === 0) {
+        clearInterval(timer);
+        btn.textContent = "Continue";
+        btn.disabled = !check.checked;
+      } else {
+        btn.textContent = `Continue (${secs})`;
+      }
+    }, 1000);
+
+    check.addEventListener("change", () => {
+      if (secs === 0) btn.disabled = !check.checked;
+    });
+
+    btn.onclick = () => {
+      if (btn.disabled) return;
+      try {
+        clearInterval(timer);
+      } catch { }
+      setAcceptedRules(classId, userId);
+
+      // Ask browser notif permission once after rules acceptance
+      requestNotificationPermissionOnce();
+
+      overlay.style.opacity = "0";
+      overlay.style.transition = "opacity .18s ease";
+      overlay.style.pointerEvents = "none";
+      setTimeout(() => {
+        try {
+          overlay.remove();
+        } catch { }
+        onContinue();
+      }, 190);
+    };
+  }
+
+  // =========================
+  // Watch status (approved → rules → chat)
+  // =========================
   function watchStatus({ classId, userId, name }) {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = "Waiting…";
+    clearListeners();
 
     const unsub = pendingRef(classId, userId).onSnapshot(
       (doc) => {
         if (!doc.exists) {
-          if (waitStatus) waitStatus.textContent = "Request not found.";
+          setText("waitStatus", "Request not found.");
           return;
         }
         const data = doc.data() || {};
         const status = data.status;
 
         if (status === "approved") {
-          try {
-            playSound("approve");
-          } catch { }
+          playSound("approve");
 
-          showRulesGate(
-            {
-              classId,
-              userId,
-              userName: name,
-              className: selectedClassName || data.className || classId,
-            },
-            () => loadChat(name, classId, userId)
-          );
+          const className = getLS("className") || selectedClassName || classId;
+          showRulesGate({ classId, userId, userName: name, className }, () => {
+            loadChat({ classId, className, userId, name });
+          });
         } else if (status === "rejected") {
-          showDenied("You were rejected by the admin.");
+          setText("waitStatus", "You were rejected by the admin.");
         } else if (status === "banned") {
-          showDenied("You are banned.");
+          setText("waitStatus", "You are banned.");
         } else {
-          if (waitStatus) waitStatus.textContent = "Waiting for admin approval…";
+          setText("waitStatus", "Waiting for admin approval…");
         }
       },
-      () => {
-        if (waitStatus) waitStatus.textContent = "Connection error.";
-      }
+      () => setText("waitStatus", "Connection error.")
     );
 
-    // store as "chat" unsub too so cleanup works
-    chatUnsubs.push(unsub);
+    addUnsub(unsub);
   }
 
-  // ===== CHAT (OPTIMIZED RENDERING) =====
-  let chatUnsubs = [];
-
-  function clearChatListeners() {
-    chatUnsubs.forEach((u) => {
-      try {
-        u();
-      } catch { }
-    });
-    chatUnsubs = [];
-    // also stop any timers that aren't snapshot-based
-    try {
-      stopPresence();
-    } catch { }
-  }
-
+  // =========================
+  // Chat: optimized + commands + presence + typing + enter-to-send
+  // =========================
   function isNearBottom(el, threshold = 120) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
   }
@@ -903,7 +702,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function fmtTime(ts) {
     try {
       if (!ts) return "";
-      if (typeof ts === "number") return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       if (ts.toDate) return ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       return "";
     } catch {
@@ -911,238 +709,248 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function buildMsgEl(msg, classId, userId, userName) {
+  function renderMsg(d) {
     const wrap = document.createElement("div");
     wrap.className = "msg";
-    wrap.dataset.id = msg.id || "";
-
-    const top = document.createElement("div");
-    top.className = "msg-top";
-    top.innerHTML = `<strong>${escapeHtml(msg.name || "User")}</strong> <span class="muted">${fmtTime(msg.timestamp)}</span>`;
-    wrap.appendChild(top);
-
-    const body = document.createElement("div");
-    body.className = "msg-text";
-    body.textContent = msg.text || "";
-    wrap.appendChild(body);
-
+    wrap.innerHTML = `
+      <div class="msg-top"><strong>${escapeHtml(d.name || "User")}</strong> <span class="muted">${fmtTime(d.timestamp)}</span></div>
+      <div class="msg-text"></div>
+    `;
+    wrap.querySelector(".msg-text").textContent = d.text || "";
     return wrap;
   }
 
-  function updateMsgEl(el, msg) {
-    const top = el.querySelector(".msg-top");
-    const body = el.querySelector(".msg-text");
-    if (top) top.innerHTML = `<strong>${escapeHtml(msg.name || "User")}</strong> <span class="muted">${fmtTime(msg.timestamp)}</span>`;
-    if (body) body.textContent = msg.text || "";
+  let presenceTimer = null;
+
+  function stopPresence() {
+    if (presenceTimer) {
+      clearInterval(presenceTimer);
+      presenceTimer = null;
+    }
   }
 
-  // ===== NEW: upgraded loadChat =====
-  function loadChat(name, classId, userId) {
-    clearChatListeners();
+  function startPresence({ classId, userId, onCount }) {
+    stopPresence();
 
-    const chatWelcome = $("chatWelcome");
-    const chatSubtitle = $("chatSubtitle");
-    const chatStatus = $("chatStatus");
+    const ref = presenceDoc(classId);
+    const beat = async () => {
+      try {
+        await ref.set({ [userId]: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      } catch { }
+    };
 
-    if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
-    if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
-    if (chatStatus) chatStatus.textContent = "";
+    beat();
+    presenceTimer = setInterval(beat, 30000);
 
+    addUnsub(
+      ref.onSnapshot((doc) => {
+        const data = doc && doc.exists ? doc.data() || {} : {};
+        const now = Date.now();
+        const TTL = 90000;
+        let count = 0;
+
+        Object.values(data).forEach((v) => {
+          if (!v) return;
+          const ms = v.toDate ? v.toDate().getTime() : 0;
+          if (ms && now - ms <= TTL) count++;
+        });
+
+        if (typeof onCount === "function") onCount(count);
+      })
+    );
+  }
+
+  function startCommands({ classId, userId, onLogout, onRerules, onLock, onRefresh, onTheme }) {
+    const ref = commandsDoc(classId);
+    const keyBase = `st_cmd_${classId}_`;
+
+    addUnsub(
+      ref.onSnapshot((doc) => {
+        const d = doc && doc.exists ? doc.data() || {} : {};
+
+        const logoutNonce = Number(d.logoutNonce || 0);
+        const rulesNonce = Number(d.rulesNonce || 0);
+        const refreshNonce = Number(d.refreshNonce || 0);
+
+        const lastLogout = Number(sessionStorage.getItem(keyBase + "logout") || "0");
+        const lastRules = Number(sessionStorage.getItem(keyBase + "rules") || "0");
+        const lastRef = Number(sessionStorage.getItem(keyBase + "refresh") || "0");
+
+        if (logoutNonce > lastLogout) {
+          sessionStorage.setItem(keyBase + "logout", String(logoutNonce));
+          onLogout && onLogout();
+        }
+        if (rulesNonce > lastRules) {
+          sessionStorage.setItem(keyBase + "rules", String(rulesNonce));
+          onRerules && onRerules();
+        }
+        if (refreshNonce > lastRef) {
+          sessionStorage.setItem(keyBase + "refresh", String(refreshNonce));
+          onRefresh && onRefresh();
+        }
+
+        onLock && onLock(!!d.locked, d.lockMessage || "");
+        if (d.theme === "day" || d.theme === "night") onTheme && onTheme(d.theme);
+      })
+    );
+  }
+
+  function loadChat({ classId, className, userId, name }) {
+    clearListeners();
+    stopPresence();
+    setChatLocked(false, "");
+
+    // Show chat screen
     showScreen("chat");
 
-    const msgInput = $("msgInput");
-    const sendBtn = $("sendBtn");
-    const messagesDiv = $("messages");
-    const typingDiv = $("typingIndicator");
-    const themeToggle = $("themeToggle"); // will be moved into settings
-    const logoutBtn = $("logoutBtn");
+    // Apply stored settings
+    const st = getSettings();
+    applyTheme(st.theme);
+    setSoundEnabled(st.sound);
 
-    // ===== Enhanced UI / FX injection (once) =====
-    ensureEnhancedStyles();
+    // Settings button injected into your existing header controls
+    ensureSettingsButton();
 
-    // ===== Header: Settings button (Theme + Sounds) =====
-    const chatControls = document.querySelector(".chat-controls");
-    const settingsState = getSettingsState();
-
-    // Hide the old theme button (we control theme via settings)
-    if (themeToggle) themeToggle.style.display = "none";
-
-    let settingsBtn = $("settingsBtn");
-    if (!settingsBtn && chatControls) {
-      settingsBtn = document.createElement("button");
-      settingsBtn.id = "settingsBtn";
-      settingsBtn.type = "button";
-      settingsBtn.title = "Settings";
-      settingsBtn.textContent = "⚙️";
-      chatControls.insertBefore(settingsBtn, logoutBtn || null);
+    // Online badge
+    ensureEnhancedStylesOnce();
+    let badge = document.getElementById("onlineBadge");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.id = "onlineBadge";
+      badge.className = "online-badge";
+      const sub = $("chatSubtitle");
+      if (sub && sub.parentElement) sub.parentElement.appendChild(badge);
     }
 
-    // Online counter badge
-    let onlineBadge = $("onlineBadge");
-    if (!onlineBadge) {
-      onlineBadge = document.createElement("span");
-      onlineBadge.id = "onlineBadge";
-      onlineBadge.className = "online-badge";
-      onlineBadge.textContent = "• 0 online";
-      if (chatSubtitle && chatSubtitle.parentElement) {
-        chatSubtitle.parentElement.appendChild(onlineBadge);
-      }
-    }
+    setText("chatWelcome", `Welcome, ${name}!`);
+    setText("chatSubtitle", `SecureText chat | ${className}`);
 
-    // Apply theme from settings immediately
-    applyTheme(settingsState.theme);
-    setSoundEnabled(settingsState.sound);
-
-    // Open settings modal
-    if (settingsBtn) {
-      settingsBtn.onclick = () => {
-        openSettingsModal({
-          theme: getSettingsState().theme,
-          sound: getSettingsState().sound,
-          onChange: (next) => {
-            setSettingsState(next);
-            applyTheme(next.theme);
-            setSoundEnabled(next.sound);
-          },
-        });
+    // Theme button still works (quick toggle)
+    const themeToggle = $("themeToggle");
+    if (themeToggle) {
+      themeToggle.onclick = () => {
+        const cur = getSettings();
+        const next = { ...cur, theme: cur.theme === "day" ? "night" : "day" };
+        setSettings(next);
+        applyTheme(next.theme);
+        playSound("send");
       };
     }
 
-    // logout button
+    // Logout
+    const logoutBtn = $("logoutBtn");
     if (logoutBtn) {
       logoutBtn.onclick = () => {
-        forceLogoutToClassScreen({ reason: "logout" });
+        stopPresence();
+        clearListeners();
+        clearSessionLS();
+        selectedClassId = null;
+        selectedClassName = null;
+        showScreen("class");
+        loadClasses();
       };
     }
 
-    // ===== Enter to send (Shift+Enter newline) =====
-    if (msgInput && sendBtn) {
-      msgInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendBtn.click();
-        }
-      });
-    }
-
-    // ===== Presence (online counter) =====
+    // Start presence + update badge
     startPresence({
       classId,
       userId,
       onCount: (n) => {
-        if (onlineBadge) onlineBadge.textContent = `• ${n} online`;
+        if (badge) badge.textContent = `• ${n} online`;
       },
     });
 
-    // ===== Admin Commands Listener =====
-    startCommandsListener({
+    // Commands
+    startCommands({
       classId,
       userId,
-      onLogout: () => forceLogoutToClassScreen({ reason: "forced" }),
-      onRerules: () =>
-        forceReRules({
-          classId,
-          userId,
-          userName: name,
-          className: selectedClassName || classId,
-        }),
+      onLogout: () => {
+        stopPresence();
+        clearListeners();
+        clearSessionLS();
+        selectedClassId = null;
+        selectedClassName = null;
+        showScreen("class");
+        loadClasses();
+      },
+      onRerules: () => {
+        try {
+          localStorage.removeItem(rulesKey(classId, userId));
+        } catch { }
+        showRulesGate({ classId, userId, userName: name, className }, () => { });
+      },
       onLock: (locked, msg) => setChatLocked(locked, msg),
       onRefresh: () => location.reload(),
-      onTheme: (mode) => {
-        if (mode === "day" || mode === "night") {
-          applyTheme(mode);
-        }
-      },
+      onTheme: (mode) => applyTheme(mode),
     });
 
-    // ===== Announcements (limited) =====
-    chatUnsubs.push(
+    // Announcements (limit)
+    addUnsub(
       announcementsCol(classId)
         .orderBy("timestamp", "asc")
         .limit(10)
-        .onSnapshot(
-          (snap) => {
-            const list = $("announcementsList");
-            if (!list) return;
-            list.innerHTML = "";
-            snap.forEach((d) => {
-              const a = d.data() || {};
-              const row = document.createElement("div");
-              row.className = "announcement";
-              row.innerHTML = `<div class="a-top"><strong>${escapeHtml(a.title || "Announcement")}</strong><span class="muted">${fmtTime(
-                a.timestamp
-              )}</span></div><div class="a-body">${escapeHtml(a.body || "")}</div>`;
-              list.appendChild(row);
-            });
-          },
-          () => { }
-        )
+        .onSnapshot((snap) => {
+          const list = $("announcementsList");
+          if (!list) return;
+          list.innerHTML = "";
+          snap.forEach((d) => {
+            const a = d.data() || {};
+            const row = document.createElement("div");
+            row.className = "announcement";
+            row.innerHTML = `<div class="a-top"><strong>${escapeHtml(a.title || "Announcement")}</strong><span class="muted">${fmtTime(
+              a.timestamp
+            )}</span></div><div class="a-body">${escapeHtml(a.body || "")}</div>`;
+            list.appendChild(row);
+          });
+        })
     );
 
-    // ===== Messages (limitToLast 75 to save reads) =====
-    let didInitialMessages = false;
+    // Messages (limitToLast 75)
+    const messagesDiv = $("messages");
+    let didInit = false;
 
-    chatUnsubs.push(
+    addUnsub(
       messagesCol(classId)
         .orderBy("timestamp", "asc")
         .limitToLast(75)
-        .onSnapshot(
-          (snap) => {
-            if (!messagesDiv) return;
+        .onSnapshot((snap) => {
+          if (!messagesDiv) return;
+          const stick = isNearBottom(messagesDiv, 160);
 
-            const shouldStick = isNearBottom(messagesDiv, 160);
-
-            if (!didInitialMessages) {
-              messagesDiv.innerHTML = "";
-              snap.forEach((d) => {
-                const data = d.data() || {};
-                const el = buildMsgEl({ id: d.id, ...data }, classId, userId, name);
-                el.id = `msg_${d.id}`;
-                messagesDiv.appendChild(el);
-              });
-              didInitialMessages = true;
-
-              if (shouldStick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-              return;
-            }
-
-            // incremental updates after initial load
-            const frag = document.createDocumentFragment();
-
-            snap.docChanges().forEach((ch) => {
-              const doc = ch.doc;
-              const m = doc.data() || {};
-              const elId = `msg_${doc.id}`;
-              const existing = document.getElementById(elId);
-
-              if (ch.type === "added") {
-                const el = buildMsgEl({ id: doc.id, ...m }, classId, userId, name);
-                el.id = elId;
-                frag.appendChild(el);
-
-                if (document.hidden && m.userId && m.userId !== userId) {
-                  maybeNotifyNewMessage({
-                    className: selectedClassName || classId,
-                    from: m.name || "Someone",
-                    text: String(m.text || ""),
-                  });
-                  playSound("receive");
-                }
-              } else if (ch.type === "modified") {
-                if (existing) updateMsgEl(existing, { id: doc.id, ...m });
-              } else if (ch.type === "removed") {
-                if (existing) existing.remove();
-              }
+          if (!didInit) {
+            messagesDiv.innerHTML = "";
+            snap.forEach((d) => {
+              messagesDiv.appendChild(renderMsg(d.data() || {}));
             });
+            didInit = true;
+            if (stick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return;
+          }
 
-            if (frag.childNodes.length) messagesDiv.appendChild(frag);
-            if (shouldStick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-          },
-          () => { }
-        )
+          snap.docChanges().forEach((ch) => {
+            if (ch.type === "added") {
+              const m = ch.doc.data() || {};
+              messagesDiv.appendChild(renderMsg(m));
+
+              // notification + sound for other users only
+              if (m.userId && m.userId !== userId) {
+                maybeNotify({ className, from: m.name || "Someone", text: String(m.text || "") });
+                if (document.hidden) playSound("receive");
+              }
+            }
+            if (ch.type === "removed") {
+              // simplest: re-render if deletions happen (rare)
+              didInit = false;
+            }
+          });
+
+          if (stick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        })
     );
 
-    // ===== Typing indicator (animated dots) =====
+    // Typing (single doc, throttled)
+    const typingIndicator = $("typingIndicator");
+    const msgInput = $("msgInput");
     let typingTimeout = null;
     let typingDebounce = null;
     let localTyping = false;
@@ -1151,9 +959,28 @@ document.addEventListener("DOMContentLoaded", () => {
       if (localTyping === val) return;
       localTyping = val;
       try {
-        await typingDoc(classId).set({ [userId]: val }, { merge: true });
+        await typingDoc(classId).set({ [userId]: !!val }, { merge: true });
       } catch { }
     }
+
+    // show animated typing bubble for others
+    addUnsub(
+      typingDoc(classId).onSnapshot((doc) => {
+        if (!typingIndicator) return;
+        if (!doc.exists) {
+          typingIndicator.innerHTML = "";
+          return;
+        }
+        const data = doc.data() || {};
+        const others = Object.entries(data).filter(([id, v]) => id !== userId && v === true);
+        if (others.length > 0) {
+          ensureEnhancedStylesOnce();
+          typingIndicator.innerHTML = `<span class="typing-bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="muted" style="margin-left:8px">Someone is typing…</span>`;
+        } else {
+          typingIndicator.innerHTML = "";
+        }
+      })
+    );
 
     if (msgInput) {
       msgInput.oninput = () => {
@@ -1165,45 +992,34 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    try {
-      typingDoc(classId).set({ [userId]: false }, { merge: true });
-    } catch { }
-
-    chatUnsubs.push(
-      typingDoc(classId).onSnapshot((doc) => {
-        if (!typingDiv) return;
-        if (!doc.exists) {
-          typingDiv.innerHTML = "";
-          return;
+    // Enter-to-send (Shift+Enter newline)
+    const sendBtn = $("sendBtn");
+    if (msgInput && sendBtn) {
+      msgInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendBtn.click();
         }
-        const data = doc.data() || {};
-        const others = Object.entries(data).filter(([id, val]) => id !== userId && val === true);
+      });
+    }
 
-        if (others.length > 0) {
-          typingDiv.innerHTML = `<span class="typing-bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="muted" style="margin-left:8px">Someone is typing…</span>`;
-        } else {
-          typingDiv.innerHTML = "";
-        }
-      })
-    );
-
-    // ===== Send message =====
+    // Send message
     if (sendBtn && msgInput) {
       sendBtn.onclick = async () => {
-        const text = msgInput.value.trim();
+        const text = String(msgInput.value || "").trim();
         if (!text) return;
 
-        if (isChatLocked()) {
-          flashStatus("Chat is locked by admin.", "warn");
+        if (chatLocked) {
+          setText("chatStatus", "Chat is locked by admin.");
           playSound("deny");
           return;
         }
 
         sendBtn.disabled = true;
         try {
-          const banDoc = await bannedRef(classId, userId).get();
-          if (banDoc.exists) {
-            showDenied();
+          const b = await bannedRef(classId, userId).get();
+          if (b.exists) {
+            setText("chatStatus", "You are banned.");
             return;
           }
 
@@ -1215,41 +1031,42 @@ document.addEventListener("DOMContentLoaded", () => {
           });
 
           msgInput.value = "";
+          setText("chatStatus", "");
+          playSound("send");
           try {
             setTyping(false);
           } catch { }
-          playSound("send");
-        } catch (e) {
-          flashStatus("Failed to send.", "bad");
+        } catch {
+          setText("chatStatus", "Failed to send.");
         } finally {
           sendBtn.disabled = false;
         }
       };
     }
 
-    // Request notifications after rules accepted (won't spam)
+    // Ask notification permission once (won’t spam)
     requestNotificationPermissionOnce();
-
-    window.addEventListener("beforeunload", () => {
-      try {
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      } catch { }
-    });
   }
 
-  // Reset button
-  const resetBtn = $("resetBtn");
-  if (resetBtn) {
-    resetBtn.onclick = () => {
-      clearChatListeners();
-      clearLS();
-      selectedClassId = null;
-      selectedClassName = null;
+  // =========================
+  // Boot / restore
+  // =========================
+  function boot() {
+    const st = getSettings();
+    applyTheme(st.theme);
+    setSoundEnabled(st.sound);
+
+    if (savedClassId && savedUserId && savedUserName) {
+      selectedClassId = savedClassId;
+      selectedClassName = savedClassName || savedClassId;
+      showScreen("wait");
+      setText("waitStatus", "Reconnecting…");
+      watchStatus({ classId: savedClassId, userId: savedUserId, name: savedUserName });
+    } else {
       showScreen("class");
       loadClasses();
-    };
+    }
   }
 
-  // Boot
-  restoreFlow();
+  boot();
 });
