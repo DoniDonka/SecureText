@@ -1,678 +1,236 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SecureText</title>
-
   <link rel="stylesheet" href="style.css" />
-
-  <!-- Firebase v8 -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-
   <style>
-    /* =========================
-       BASE + NO OUTER SCROLL
-       ========================= */
-    html, body { height: 100%; margin: 0; }
-    body{
-      background:
-        radial-gradient(900px 500px at 20% 10%, rgba(80,140,255,.12), transparent 60%),
-        radial-gradient(800px 500px at 80% 20%, rgba(60,255,160,.10), transparent 55%),
-        radial-gradient(900px 700px at 50% 85%, rgba(255,255,255,.06), transparent 60%),
-        #070a0f;
-      color: rgba(255,255,255,.92);
-      overflow: hidden; /* KEY: prevent page scrollbar */
-      font-family: Arial, sans-serif;
+    /* minimal layout helpers (keeps your existing style.css intact) */
+    .screen {
+      display: none
     }
 
-    /* FULLSCREEN ROOT (no padding = true stretch) */
-    #root{
-      position: relative;
-      height: 100vh;
-      width: 100%;
-      padding: 0;              /* KEY: remove boxing */
-      box-sizing: border-box;
-      overflow: hidden;
+    .screen.active {
+      display: block
     }
 
-    /* =========================
-       ADMIN PATH BUTTON
-       (NOW ONLY EXISTS IN CLASS SCREEN HTML)
-       ========================= */
-    .admin-path-btn{
-      position:absolute;
-      top: 15px;
-      right: 20px;
-      padding: 8px 14px;
-      background: rgba(0,0,0,.35);
-      color: white;
-      border: 1px solid rgba(255,255,255,.14);
-      font-size: 13px;
-      cursor: pointer;
-      transition: 0.2s;
-      z-index: 50;
-      border-radius: 12px;
-      backdrop-filter: blur(10px);
-    }
-    .admin-path-btn:hover{ background: rgba(0,0,0,.5); transform: translateY(-1px); }
-    .admin-path-btn:active{ transform: translateY(0); opacity: .95; }
-
-    /* =========================
-       SCREEN VISIBILITY
-       ========================= */
-    .screen{ display:none; opacity:0; transform: translateY(10px); }
-    .screen.active{
-      display:block;
-      opacity:1;
-      transform: translateY(0);
-      transition: opacity .22s ease, transform .22s ease;
+    #root {
+      min-height: 100vh
     }
 
-    /* =========================
-       MODERN ENTRY UI
-       ========================= */
-    :root{
-      --glass: rgba(18,18,18,.55);
-      --glass2: rgba(18,18,18,.35);
-      --border: rgba(255,255,255,.08);
-      --text: rgba(255,255,255,.92);
-      --muted: rgba(255,255,255,.65);
-      --accent: rgba(68, 255, 160, .9);
-      --danger: rgba(255, 90, 90, .95);
-      --warn: rgba(255, 211, 107, .95);
-      --shadow: 0 24px 70px rgba(0,0,0,.55);
-    }
-
-    #screen-class, #screen-pin, #screen-name, #screen-wait{
-      height: 100%;
-      display:grid;
-      place-items:center;
-      padding: 14px;
-      box-sizing: border-box;
-      overflow:hidden;
-    }
-
-    .entry-card{
-      width: min(760px, 92vw);
-      background: linear-gradient(180deg, var(--glass), var(--glass2));
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      box-shadow: var(--shadow);
-      padding: 26px 24px;
-      position: relative;
-      overflow: hidden;
-      animation: cardIn .38s ease;
-      transform-origin:center;
-    }
-    .entry-card::before{
-      content:"";
-      position:absolute;
-      inset:-2px;
-      background:
-        radial-gradient(500px 220px at 30% 0%, rgba(80,140,255,.22), transparent 60%),
-        radial-gradient(500px 220px at 70% 0%, rgba(60,255,160,.18), transparent 60%);
-      filter: blur(10px);
-      opacity: .55;
-      pointer-events:none;
-    }
-    @keyframes cardIn{
-      from{ opacity:0; transform: translateY(14px) scale(.985); }
-      to{ opacity:1; transform: translateY(0) scale(1); }
-    }
-
-    .entry-top{
-      position: relative;
-      z-index:1;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-bottom:14px;
-    }
-    .brand{ display:flex; align-items:center; gap:10px; }
-    .brand-badge{
-      width:38px; height:38px;
-      border-radius: 12px;
-      background: rgba(255,255,255,.06);
-      border: 1px solid var(--border);
-      display:grid;
-      place-items:center;
-      box-shadow: 0 10px 30px rgba(0,0,0,.35);
-      position: relative;
-      overflow:hidden;
-    }
-    .brand-badge::after{
-      content:"";
-      position:absolute;
-      inset:-30%;
-      background: conic-gradient(from 180deg, rgba(60,255,160,.0), rgba(60,255,160,.25), rgba(80,140,255,.25), rgba(60,255,160,.0));
-      animation: spin 3.5s linear infinite;
-      opacity:.85;
-    }
-    @keyframes spin{ to{ transform: rotate(360deg);} }
-    .brand-badge span{ position:relative; z-index:2; font-weight:900; opacity:.95; letter-spacing:.6px; }
-
-    .entry-title{ position:relative; z-index:1; font-size: 28px; margin:0; line-height:1.15; }
-    .entry-sub{ position:relative; z-index:1; margin:6px 0 0 0; color: var(--muted); font-size: 14px; }
-
-    .btn{
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.06);
-      color: var(--text);
-      padding: 10px 14px;
-      border-radius: 12px;
-      cursor:pointer;
-      transition: transform .12s ease, filter .12s ease, background .12s ease, opacity .12s ease;
-    }
-    .btn:hover{ transform: translateY(-1px); filter: brightness(1.05); background: rgba(255,255,255,.08); }
-    .btn:active{ transform: translateY(0); opacity: .95; }
-    .btn.primary{
-      background: rgba(60,255,160,.14);
-      border-color: rgba(60,255,160,.28);
-    }
-    .btn.ghost{ background: transparent; }
-
-    .entry-form{ position:relative; z-index:1; margin-top:18px; display:grid; gap:12px; }
-    .field{ display:grid; gap:8px; }
-    .label{ font-size:12px; color: var(--muted); }
-    .input{
-      width:100%;
-      padding:12px 14px;
-      border-radius:12px;
-      background: rgba(0,0,0,.35);
-      border: 1px solid var(--border);
-      color: var(--text);
-      outline:none;
-      box-sizing:border-box;
-      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
-    }
-    .input:focus{
-      transform: translateY(-1px);
-      border-color: rgba(80,140,255,.35);
-      background: rgba(0,0,0,.45);
-    }
-
-    .classes-wrap{
-      position: relative;
-      z-index:1;
-      display:grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .class-tile{
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.05);
-      border-radius: 16px;
-      padding: 14px 14px;
-      cursor:pointer;
-      transition: transform .14s ease, background .14s ease, border-color .14s ease;
-      animation: tileIn .28s ease;
-    }
-    @keyframes tileIn{
-      from{ opacity:0; transform: translateY(8px); }
-      to{ opacity:1; transform: translateY(0); }
-    }
-    .class-tile:hover{
-      transform: translateY(-2px);
-      background: rgba(255,255,255,.07);
-      border-color: rgba(255,255,255,.14);
-    }
-    .class-name{ font-weight: 800; margin:0; font-size: 15px; }
-    .class-meta{ margin: 6px 0 0 0; font-size: 12px; color: var(--muted); }
-
-    .notice{ margin-top: 10px; position:relative; z-index:1; }
-    .notice.bad{ color: var(--danger); }
-    .notice.warn{ color: var(--warn); }
-    .notice.good{ color: var(--accent); }
-
-    @media(max-width:720px){
-      .classes-wrap{ grid-template-columns: 1fr; }
-    }
-
-    /* =========================
-       FULLSCREEN CHAT (stretched)
-       ========================= */
-    #screen-chat{ height: 100%; overflow:hidden; }
-
-    /* IMPORTANT: full width, no max-width, no margin */
-    #chat-screen{
-      height: 100%;
-      width: 100%;
-      max-width: none;
-      margin: 0;
-      display:flex;
+    .center {
+      min-height: 100vh;
+      display: flex;
       flex-direction: column;
-      overflow:hidden;
-      border-radius: 0; /* fullscreen edge-to-edge */
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      gap: 12px
     }
 
-    /* Messages is the ONLY scroll area */
-    #messages.messages{
-      flex: 1 1 auto;
-      min-height: 0;      /* KEY for flex scrolling */
-      overflow-y:auto;
-      margin: 10px 14px;
-      padding: 12px;
-      border-radius: 12px;
-      background: rgba(0,0,0,0.12);
-      border: 1px solid rgba(255,255,255,0.06);
-      scroll-behavior: smooth;
-    }
-
-    #announcementsBox{
-      flex: 0 0 auto;
-      margin: 10px 14px 0 14px;
-      border-radius: 12px;
-      padding: 10px 12px;
-      background: rgba(0,0,0,0.25);
-      border: 1px solid rgba(255,255,255,0.08);
-    }
-    #announcementsList{
-      max-height: 90px;
-      overflow-y:auto;
-      margin-top: 8px;
-    }
-
-    #typingIndicator{
-      flex: 0 0 auto;
-      margin: 0 14px 8px 14px !important;
-      opacity: .85;
-      font-style: italic;
-    }
-
-    #chat-input{
-      flex: 0 0 auto;
-      margin: 0;
-      padding: 10px 14px 14px 14px;
-      display:flex;
-      gap: 10px;
-      align-items:center;
-      background: rgba(0,0,0,0.35);
-      border-top: 1px solid rgba(255,255,255,0.06);
-    }
-    #msgInput{ flex:1; min-width:0; padding: 12px 14px; border-radius:12px; }
-    #sendBtn{ padding: 11px 16px; border-radius:12px; }
-
-    /* Message pop animation */
-    .msg, .reply-msg{
-      animation: msgIn 160ms ease;
-      transform-origin: bottom;
-    }
-    @keyframes msgIn{
-      from{ opacity:0; transform: translateY(6px) scale(.995); }
-      to{ opacity:1; transform: translateY(0) scale(1); }
-    }
-
-    /* =========================
-       INTRO OVERLAY + CONFETTI
-       FIXED: cannot block anything once hidden
-       ========================= */
-    .intro-overlay{
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      display:grid;
-      place-items:center;
-      background:
-        radial-gradient(900px 500px at 20% 10%, rgba(80,140,255,.14), transparent 60%),
-        radial-gradient(800px 500px at 80% 20%, rgba(60,255,160,.12), transparent 55%),
-        rgba(0,0,0,.75);
-      backdrop-filter: blur(10px);
-      opacity: 1;
-      pointer-events: all;
-      transition: opacity .35s ease, transform .35s ease;
-    }
-    .intro-overlay.hidden{
-      opacity: 0;
-      pointer-events: none;     /* KEY */
-      visibility: hidden;       /* KEY */
-      transform: translateY(-8px);
-    }
-
-    .intro-card{
-      width: min(560px, 92vw);
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: linear-gradient(180deg, rgba(18,18,18,.68), rgba(18,18,18,.42));
-      box-shadow: 0 30px 90px rgba(0,0,0,.55);
-      padding: 22px 22px 18px 22px;
-      position: relative;
-      overflow:hidden;
-      animation: introPop .45s ease;
-    }
-    @keyframes introPop{
-      from{ opacity:0; transform: translateY(14px) scale(.98); }
-      to{ opacity:1; transform: translateY(0) scale(1); }
-    }
-    .intro-card::before{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background: conic-gradient(from 180deg,
-        rgba(60,255,160,.00),
-        rgba(60,255,160,.18),
-        rgba(80,140,255,.18),
-        rgba(60,255,160,.00));
-      animation: introSpin 4.2s linear infinite;
-      opacity:.8;
-    }
-    @keyframes introSpin{ to{ transform: rotate(360deg); } }
-
-    .intro-logo{ position:relative; z-index:2; display:flex; align-items:center; gap:12px; }
-    .intro-badge{
-      width: 46px; height: 46px;
+    .card {
+      width: min(720px, 94vw);
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(255, 255, 255, .10);
       border-radius: 14px;
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.10);
-      display:grid;
-      place-items:center;
-      box-shadow: 0 12px 35px rgba(0,0,0,.4);
-      overflow:hidden;
+      padding: 18px
     }
-    .intro-badge span{ font-weight: 900; letter-spacing:.6px; opacity:.95; }
-    .intro-name{ font-size: 22px; font-weight: 900; letter-spacing:.4px; }
-    .intro-tag{ margin-top:4px; font-size: 12px; opacity:.72; }
 
-    .intro-bar{
-      position:relative;
-      z-index:2;
-      margin-top: 16px;
-      height: 10px;
-      border-radius: 999px;
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.08);
-      overflow:hidden;
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center
     }
-    .intro-bar-fill{
-      height:100%;
-      width:35%;
-      border-radius:999px;
-      background: linear-gradient(90deg, rgba(60,255,160,.85), rgba(80,140,255,.85));
-      animation: introLoad 1.25s ease-in-out infinite;
-    }
-    @keyframes introLoad{
-      0%{ transform: translateX(-30%); width: 30%; opacity:.8; }
-      50%{ transform: translateX(80%); width: 45%; opacity:1; }
-      100%{ transform: translateX(-30%); width: 30%; opacity:.8; }
-    }
-    .intro-hint{ position:relative; z-index:2; margin-top:10px; font-size:12px; opacity:.7; }
 
-    .confetti-canvas{
-      position: fixed;
-      inset:0;
-      z-index: 9998;
-      pointer-events:none;
-      opacity:0;
-      transition: opacity .2s ease;
+    .muted {
+      opacity: .75
     }
-    .confetti-canvas.on{ opacity:1; }
 
-    .welcome-glow{ animation: welcomeGlow 650ms ease; }
-    @keyframes welcomeGlow{
-      from{ text-shadow:0 0 0 rgba(60,255,160,0); transform: translateY(6px); opacity:0; }
-      to{ text-shadow:0 0 22px rgba(60,255,160,.10); transform: translateY(0); opacity:1; }
+    .notice {
+      margin-top: 10px;
+      opacity: .9
+    }
+
+    .notice.warn {
+      color: #ffd36b
+    }
+
+    .notice.bad {
+      color: #ff6b6b
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: min(900px, 94vw);
+      margin-bottom: 10px
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: .08em
+    }
+
+    .pill {
+      opacity: .8;
+      font-size: .85rem
+    }
+
+    input {
+      background: #161b22;
+      color: #fff
+    }
+
+    a {
+      color: #8ab4ff
     }
   </style>
 </head>
 
 <body>
   <div id="root">
-
-    <!-- INTRO OVERLAY -->
-    <div id="introOverlay" class="intro-overlay">
-      <div class="intro-card">
-        <div class="intro-logo">
-          <div class="intro-badge"><span>ST</span></div>
-          <div>
-            <div class="intro-name">SecureText</div>
-            <div class="intro-tag">Private class chat • Smooth • Modern</div>
-          </div>
-        </div>
-        <div class="intro-bar"><div class="intro-bar-fill"></div></div>
-        <div class="intro-hint" id="introHint">Loading…</div>
-      </div>
-    </div>
-
-    <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
-
-    <!-- CLASS SELECT -->
-    <div id="screen-class" class="screen active">
-
-      <!-- ADMIN PATH BUTTON (ONLY HERE NOW) -->
-      <button class="admin-path-btn"
-        onclick="window.location.href='https://donidonka.github.io/SecureText/admin.html'">
-        ADMIN PATH
-      </button>
-
-      <div class="entry-card">
-        <div class="entry-top">
-          <div class="brand">
-            <div class="brand-badge"><span>ST</span></div>
-            <div>
-              <h1 class="entry-title">SecureText</h1>
-              <p class="entry-sub">Choose your class to get started.</p>
-            </div>
-          </div>
+    <!-- Screen: choose class -->
+    <section id="screen-class" class="screen active">
+      <div class="center">
+        <div class="topbar">
+          <div class="brand">ST <span class="pill muted">SecureText</span></div>
+          <button id="adminPathBtn" type="button" title="Admin Panel">ADMIN PATH</button>
         </div>
 
-        <div id="classes" class="classes-wrap"></div>
-        <p id="classError" class="notice bad"></p>
-      </div>
-    </div>
-
-    <!-- PIN -->
-    <div id="screen-pin" class="screen">
-      <div class="entry-card">
-        <div class="entry-top">
-          <div class="brand">
-            <div class="brand-badge"><span>ST</span></div>
-            <div>
-              <h1 class="entry-title">Enter PIN</h1>
-              <p class="entry-sub">Class: <strong id="pinClassName"></strong></p>
-            </div>
-          </div>
-          <button id="pinBackBtn" class="btn ghost">Back</button>
-        </div>
-
-        <div class="entry-form">
-          <div class="field">
-            <div class="label">Class PIN</div>
-            <input id="pinInput" class="input" type="password" placeholder="••••" />
-          </div>
-          <button id="pinContinueBtn" class="btn primary">Continue</button>
-          <p id="pinError" class="notice bad"></p>
+        <div class="card">
+          <h1 style="margin:0 0 6px 0">SecureText</h1>
+          <div class="muted">Choose your class to get started.</div>
+          <div id="classError" class="notice bad"></div>
+          <div id="classes" class="row" style="margin-top:12px">Loading…</div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- NAME -->
-    <div id="screen-name" class="screen">
-      <div class="entry-card">
-        <div class="entry-top">
-          <div class="brand">
-            <div class="brand-badge"><span>ST</span></div>
-            <div>
-              <h1 class="entry-title">Your Name</h1>
-              <p class="entry-sub">This is what others will see in chat.</p>
-            </div>
+    <!-- Screen: pin -->
+    <section id="screen-pin" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Enter PIN</h2>
+          <div class="muted">Class: <strong id="pinClassName"></strong></div>
+          <div style="margin-top:12px">
+            <label class="muted" for="pinInput">Class PIN</label><br />
+            <input id="pinInput" type="password" autocomplete="one-time-code"
+              style="width:min(420px,90%);padding:10px;border-radius:8px;border:none;margin-top:6px" />
           </div>
-          <button id="nameBackBtn" class="btn ghost">Back</button>
-        </div>
-
-        <div class="entry-form">
-          <div class="field">
-            <div class="label">Display name</div>
-            <input id="nameInput" class="input" type="text" placeholder="e.g. Tester" />
+          <div id="pinError" class="notice bad"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="pinBackBtn" type="button">Back</button>
+            <button id="pinContinueBtn" type="button">Continue</button>
           </div>
-          <button id="nameContinueBtn" class="btn primary">Request Access</button>
-          <p id="nameError" class="notice bad"></p>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- WAIT -->
-    <div id="screen-wait" class="screen">
-      <div class="entry-card">
-        <div class="entry-top">
-          <div class="brand">
-            <div class="brand-badge"><span>ST</span></div>
-            <div>
-              <h1 class="entry-title">Waiting for Approval</h1>
-              <p class="entry-sub" id="waitText"></p>
-            </div>
+    <!-- Screen: name -->
+    <section id="screen-name" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Your Name</h2>
+          <div class="muted">This is what others will see in chat.</div>
+          <div style="margin-top:12px">
+            <label class="muted" for="nameInput">Display name</label><br />
+            <input id="nameInput" type="text" maxlength="28"
+              style="width:min(420px,90%);padding:10px;border-radius:8px;border:none;margin-top:6px" />
           </div>
-          <button id="resetBtn" class="btn ghost">Start over</button>
-        </div>
-
-        <div style="position:relative;z-index:1;margin-top:8px;">
-          <p class="entry-sub">Keep this tab open — you’ll enter chat automatically once approved.</p>
-          <p id="waitStatus" class="notice warn"></p>
+          <div id="nameError" class="notice bad"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="nameBackBtn" type="button">Back</button>
+            <button id="nameContinueBtn" type="button">Request Access</button>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- CHAT -->
-    <div id="screen-chat" class="screen">
+    <!-- Screen: waiting -->
+    <section id="screen-wait" class="screen">
+      <div class="center">
+        <div class="card">
+          <h2 style="margin:0 0 8px 0">Waiting for Approval</h2>
+          <div id="waitText" class="muted">Keep this tab open — you’ll enter chat automatically once approved.</div>
+          <div id="waitStatus" class="notice warn"></div>
+          <div class="row" style="margin-top:12px">
+            <button id="resetBtn" type="button">Start over</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: chat -->
+    <section id="screen-chat" class="screen">
       <div id="chat-screen" class="night">
-        <header class="chat-header">
+        <div class="chat-header">
           <div>
-            <h1 id="chatWelcome">Welcome!</h1>
-            <p class="subtitle" id="chatSubtitle">SecureText chat</p>
+            <h1 id="chatWelcome" style="margin:0">Welcome!</h1>
+            <p id="chatSubtitle" class="subtitle" style="margin:2px 0 0 0">SecureText chat</p>
           </div>
           <div class="chat-controls">
-            <button id="themeToggle">🌙</button>
-            <button id="logoutBtn">Logout</button>
+            <!-- app.js will hide this and add ⚙️ settings next to logout -->
+            <button id="themeToggle" type="button">🌙</button>
+            <button id="logoutBtn" type="button">Logout</button>
           </div>
-        </header>
+        </div>
 
         <div id="announcementsBox">
           <strong>Announcements</strong>
           <div id="announcementsList"></div>
         </div>
 
+        <div id="chatStatus" class="notice"></div>
+
         <div id="messages" class="messages"></div>
-
-        <div id="typingIndicator"></div>
-
-        <div id="replies-panel" class="replies hidden">
-          <div class="replies-header">
-            <span id="replies-title">Replies</span>
-            <button id="closeReplies">Close</button>
-          </div>
-          <div id="replies-list" class="replies-list"></div>
-          <div class="reply-input">
-            <input id="replyMsgInput" type="text" placeholder="Reply..." />
-            <button id="sendReplyBtn">Send</button>
-          </div>
-        </div>
+        <div id="typingIndicator" class="muted" style="margin:0 12px 10px 12px"></div>
 
         <div id="chat-input">
-          <input id="msgInput" type="text" placeholder="Type a message" />
-          <button id="sendBtn">Send</button>
+          <input id="msgInput" type="text" placeholder="Message…" autocomplete="off" />
+          <button id="sendBtn" type="button">Send</button>
         </div>
 
-        <p id="chatStatus" class="notice"></p>
-      </div>
-    </div>
+        <!-- (Optional) Replies drawer exists in your file; app.js v2 doesn’t require it, but leaving it is fine -->
+        <div id="repliesPanel" class="replies hidden">
+          <div class="replies-header">
+            <div class="muted"><span id="repliesTitle">Replies</span></div>
+            <button id="closeRepliesBtn" type="button">Close</button>
+          </div>
+          <div id="repliesList" class="replies-list"></div>
+          <div class="reply-input">
+            <input id="replyInput" type="text" placeholder="Reply…" autocomplete="off" />
+            <button id="sendReplyBtn" type="button">Send</button>
+          </div>
+        </div>
 
+      </div>
+    </section>
   </div>
 
+  <!-- Firebase v8 CDN (matches your firebase.js + admin.html) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+  <!-- your config + app -->
   <script src="firebase.js"></script>
   <script src="app.js"></script>
-  <script src="ui_fx_v4.js"></script>
 
-  <!-- SAFE INTRO/CONFETTI HELPERS (does NOT touch your app.js) -->
   <script>
-    (function(){
-      const overlay = document.getElementById("introOverlay");
-      const hint = document.getElementById("introHint");
-      const canvas = document.getElementById("confettiCanvas");
-
-      function setHint(t){ if (hint) hint.textContent = t; }
-
-      function hardRemoveOverlay(){
-        if (!overlay) return;
-        overlay.classList.add("hidden");
-        // remove for real so it can NEVER block clicks
-        setTimeout(() => {
-          try { overlay.parentNode && overlay.parentNode.removeChild(overlay); } catch {}
-        }, 250);
-      }
-
-      // remove once page is ready
-      window.addEventListener("load", () => {
-        setHint("Ready");
-        setTimeout(hardRemoveOverlay, 650);
-      });
-
-      // ALSO remove on first user interaction (extra safety)
-      window.addEventListener("pointerdown", hardRemoveOverlay, { once: true });
-
-      // Expose optional helpers (your app.js can call these if you want later)
-      window.ST_UI = {
-        setHint,
-        hideIntro: hardRemoveOverlay,
-        confettiBurst: function(durationMs = 1200){
-          if (!canvas) return;
-          const ctx = canvas.getContext("2d");
-          canvas.width = innerWidth; canvas.height = innerHeight;
-          canvas.classList.add("on");
-
-          const colors = ["rgba(60,255,160,.95)","rgba(80,140,255,.95)","rgba(255,255,255,.90)","rgba(255,211,107,.95)"];
-          const rand = (a,b)=>a+Math.random()*(b-a);
-          const pieces = [];
-          const count = Math.min(160, Math.floor(innerWidth/8));
-
-          for (let i=0;i<count;i++){
-            pieces.push({
-              x: rand(0, canvas.width),
-              y: rand(-40, -10),
-              w: rand(6,12),
-              h: rand(3,6),
-              vx: rand(-2.8,2.8),
-              vy: rand(2.5,6.8),
-              rot: rand(0, Math.PI*2),
-              vr: rand(-0.18,0.18),
-              color: colors[Math.floor(Math.random()*colors.length)],
-              life: rand(durationMs*0.6, durationMs)
-            });
-          }
-
-          const start = performance.now();
-          function frame(now){
-            const t = now - start;
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-
-            for (const p of pieces){
-              p.life -= 16;
-              p.x += p.vx;
-              p.y += p.vy;
-              p.rot += p.vr;
-              p.vy += 0.03;
-
-              ctx.save();
-              ctx.translate(p.x,p.y);
-              ctx.rotate(p.rot);
-              ctx.fillStyle = p.color;
-              ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
-              ctx.restore();
-            }
-
-            const alive = pieces.some(p => p.life > 0 && p.y < canvas.height + 40);
-            if (t < durationMs && alive) requestAnimationFrame(frame);
-            else {
-              canvas.classList.remove("on");
-              ctx.clearRect(0,0,canvas.width,canvas.height);
-            }
-          }
-          requestAnimationFrame(frame);
-        }
-      };
+    // simple admin path button
+    (function () {
+      const btn = document.getElementById("adminPathBtn");
+      if (btn) btn.onclick = () => (window.location.href = "admin.html");
     })();
   </script>
+  <script src="ui_premium.js"></script>
 </body>
+
 </html>
