@@ -448,8 +448,9 @@ body::after {
 }
 
 /* ============================
-   SecureText Premium UI Pack
-   (premium glass; not "hacker")
+   SecureText Premium Pack v2
+   - Fixes black screen by ensuring FX canvas is transparent and cleared
+   - Adds toasts + HUD + ambient pulses
    ============================ */
 
 #premiumBg{
@@ -520,14 +521,39 @@ body::after {
   z-index:-1;
 }
 
+/* Transparent FX canvas (NO black fill) */
 .fx-burst-canvas{
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index: 5;
-  opacity: 1;
+  z-index: 6; /* above bg, below modals typically */
+  background: transparent !important;
 }
 
+/* Ambient pulse layer (event-only) */
+#ambientPulseLayer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+.ambient-pulse{
+  position:absolute;
+  left:50%;
+  top:45%;
+  width:720px;
+  height:720px;
+  transform: translate(-50%,-50%) scale(1);
+  filter: blur(48px);
+  animation: stAmbient .85s ease-out forwards;
+  opacity:.24;
+}
+@keyframes stAmbient{
+  0%{ transform: translate(-50%,-50%) scale(.98); opacity:.0; }
+  40%{ transform: translate(-50%,-50%) scale(1.04); opacity:.28; }
+  100%{ transform: translate(-50%,-50%) scale(1.08); opacity:0; }
+}
+
+/* Cinematic screen transitions */
 .screen{
   transition: opacity .28s ease, transform .28s ease, filter .28s ease;
   will-change: opacity, transform, filter;
@@ -544,8 +570,9 @@ body::after {
   filter: blur(0);
 }
 
+/* Premium message hover (safe) */
 .msg{
-  transition: transform .14s ease, box-shadow .14s ease, background .14s ease, border-color .14s ease;
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
 }
 .msg:hover{
   transform: translateY(-2px);
@@ -553,4 +580,86 @@ body::after {
   border-color: rgba(255,255,255,.14);
 }
 
+/* Toasts */
+.toast-container{
+  position:fixed;
+  bottom:18px;
+  right:18px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  z-index: 999999;
+}
+.toast{
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(18,18,18,.85);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.55);
+  transform: translateX(18px);
+  opacity: 0;
+  animation: toastIn .20s ease forwards;
+  max-width: min(360px, 86vw);
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+.toast.out{
+  animation: toastOut .22s ease forwards;
+}
+.toast.good{ border-color: rgba(60,255,160,.22); }
+.toast.warn{ border-color: rgba(255,211,107,.22); }
+.toast.info{ border-color: rgba(80,140,255,.22); }
+@keyframes toastIn{ to{ transform: translateX(0); opacity: 1; } }
+@keyframes toastOut{ to{ transform: translateX(18px); opacity: 0; } }
+
+/* HUD */
+.st-hud{
+  position:absolute;
+  top:10px;
+  right:12px;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  pointer-events:none; /* stays purely informational */
+}
+.hud-left, .hud-right{ display:flex; gap:10px; align-items:center; }
+.hud-chip{
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.22);
+  border: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.86);
+  font-size: 12px;
+  letter-spacing:.02em;
+  backdrop-filter: blur(10px);
+}
+.hud-soft{ opacity:.85; }
+.hud-badge{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.12);
+  backdrop-filter: blur(10px);
+}
+.hud-badge .dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(60,255,160,.92);
+  box-shadow: 0 0 18px rgba(60,255,160,.18);
+  animation: stDotPulse 1.8s ease-in-out infinite;
+}
+@keyframes stDotPulse{
+  0%,100%{ transform: scale(1); opacity:.75; }
+  50%{ transform: scale(1.25); opacity: 1; }
+}
+.hud-badge .txt{ font-weight: 800; letter-spacing:.05em; }
+
+/* Cursor glow OFF in chat */
 #screen-chat.active #cursorGlow{ opacity:0 !important; }
