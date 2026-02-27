@@ -446,3 +446,160 @@ body::before,
 body::after {
   pointer-events: none !important;
 }
+
+
+/* =========================
+   SecureText “eDEX-ish” UI + FX Pack
+   (safe to paste at bottom)
+   ========================= */
+
+:root{
+  --st-accent: rgba(138,180,255,.95);
+  --st-accent2: rgba(77,77,255,.85);
+  --st-danger: rgba(255,107,107,.95);
+  --st-glass: rgba(255,255,255,.06);
+  --st-border: rgba(255,255,255,.10);
+}
+
+/* Ambient animated grid overlay (disabled when fx-off) */
+html.st-fx::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+  opacity:.35;
+  background:
+    radial-gradient(1200px 700px at 20% 12%, rgba(138,180,255,.14), transparent 60%),
+    radial-gradient(900px 600px at 85% 20%, rgba(255,211,107,.10), transparent 55%),
+    radial-gradient(900px 600px at 40% 90%, rgba(255,107,107,.08), transparent 55%),
+    linear-gradient(transparent 0 98%, rgba(255,255,255,.06) 98% 100%),
+    linear-gradient(90deg, transparent 0 98%, rgba(255,255,255,.06) 98% 100%);
+  background-size: auto, auto, auto, 42px 42px, 42px 42px;
+  mix-blend-mode: screen;
+}
+html.fx-off.st-fx::before{opacity:0}
+
+/* Cursor “scanner” highlight */
+html.st-fx::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+  opacity:.35;
+  background:
+    radial-gradient(220px 220px at var(--st-mx, -100px) var(--st-my, -100px), rgba(138,180,255,.18), transparent 60%),
+    radial-gradient(320px 320px at var(--st-mx, -100px) var(--st-my, -100px), rgba(77,77,255,.10), transparent 70%);
+  transition: opacity .18s ease;
+}
+html.fx-off.st-fx::after{opacity:0}
+
+/* Ensure app content stays above overlays */
+#root{position:relative; z-index:1}
+
+/* Smoother buttons + glow */
+button{
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+}
+button:hover{
+  box-shadow: 0 0 0 1px rgba(138,180,255,.18), 0 14px 40px rgba(0,0,0,.45);
+}
+button:active{transform: translateY(0) scale(.99)}
+
+/* Cleaner scrollbars */
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.10);
+  border: 2px solid rgba(0,0,0,.35);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover{background: rgba(138,180,255,.18)}
+
+/* Messages: quote + actions + ping */
+.msg{
+  position:relative;
+  border:1px solid rgba(255,255,255,.06);
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
+  backdrop-filter: blur(10px);
+}
+#chat-screen.day .msg{
+  border:1px solid rgba(0,0,0,.08);
+  background: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.02));
+}
+
+.msg-actions{
+  display:flex;
+  gap:8px;
+  margin-top:8px;
+  opacity:.85;
+}
+.msg-actions .mini{
+  padding:6px 10px;
+  font-size:.78rem;
+  border-radius:10px;
+  background: rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.10);
+}
+#chat-screen.day .msg-actions .mini{
+  background: rgba(0,0,0,.06);
+  border:1px solid rgba(0,0,0,.10);
+}
+
+.msg-quote{
+  display:flex;
+  gap:10px;
+  margin-top:8px;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.18);
+  cursor:pointer;
+}
+.msg-quote .qbar{
+  width:3px;
+  border-radius:999px;
+  background: rgba(138,180,255,.75);
+}
+.msg-quote .qwho{font-weight:800; font-size:.86rem; letter-spacing:.02em}
+.msg-quote .qtext{opacity:.8; font-size:.84rem; margin-top:2px; line-height:1.15rem}
+
+.msg-ping{
+  box-shadow: 0 0 0 1px rgba(138,180,255,.24), 0 0 24px rgba(138,180,255,.20) !important;
+  transform: translateY(-2px);
+}
+
+/* Replies panel better look */
+.replies{
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  background: linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));
+  border-top: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 -20px 50px rgba(0,0,0,.55);
+}
+#chat-screen.day .replies{
+  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(245,245,245,.76));
+  border-top: 1px solid rgba(0,0,0,.10);
+}
+
+.reply-msg{
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.06);
+}
+
+/* Optional FX “ping” class for any element */
+.st-ping{
+  animation: stPing 650ms ease;
+}
+@keyframes stPing{
+  0%{box-shadow:0 0 0 0 rgba(138,180,255,0); transform: translateY(0)}
+  40%{box-shadow:0 0 0 1px rgba(138,180,255,.35), 0 0 26px rgba(138,180,255,.22); transform: translateY(-2px)}
+  100%{box-shadow:0 0 0 0 rgba(138,180,255,0); transform: translateY(0)}
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .msg, .reply-msg{animation:none !important}
+  button{transition:none !important}
+  html.st-fx::before, html.st-fx::after{display:none}
+}
