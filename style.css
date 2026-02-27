@@ -1,10 +1,3 @@
-/* ===== EMERGENCY LAYER FIX (prevents background covering UI) ===== */
-#premiumBg{ z-index:0 !important; pointer-events:none !important; }
-#premiumBg *{ pointer-events:none !important; }
-#fxBurstCanvas, .fx-burst-canvas{ pointer-events:none !important; }
-#root{ position:relative !important; z-index:2 !important; }
-.toast-container{ z-index:999999 !important; pointer-events:none !important; }
-
 /* ---------------------------
    YOUR ORIGINAL CSS
 ---------------------------- */
@@ -454,219 +447,32 @@ body::after {
   pointer-events: none !important;
 }
 
-/* ============================
-   SecureText Premium Pack v2
-   - Fixes black screen by ensuring FX canvas is transparent and cleared
-   - Adds toasts + HUD + ambient pulses
-   ============================ */
-
-#premiumBg{
-  position:fixed;
-  inset:0;
-  z-index:-2;
-  overflow:hidden;
+/* ===== SAFE PREMIUM BACKGROUND (NO OVERLAYS, NO JS) ===== */
+html, body { height: 100%; }
+body{
   background:
     radial-gradient(1200px 700px at 12% 10%, rgba(80,140,255,.14), transparent 60%),
     radial-gradient(900px 650px at 88% 18%, rgba(255,0,130,.10), transparent 55%),
     radial-gradient(900px 700px at 50% 92%, rgba(60,255,160,.08), transparent 60%),
-    linear-gradient(180deg, #070a0f, #05070b);
+    linear-gradient(180deg, #070a0f, #05070b) !important;
 }
-
-.bg-glow{
-  position:absolute;
-  width:680px;
-  height:680px;
-  border-radius:50%;
-  filter: blur(110px);
-  opacity:.40;
-  transform: translate3d(0,0,0);
-  animation: stGlowFloat 16s ease-in-out infinite alternate;
-  mix-blend-mode: screen;
-  pointer-events:none;
-}
-.bg-glow.glow-1{ background: rgba(80,140,255,.75); top:-220px; left:-220px; }
-.bg-glow.glow-2{ background: rgba(60,255,160,.60); top:10%; right:-280px; animation-duration: 18s; }
-.bg-glow.glow-3{ background: rgba(255,120,160,.40); bottom:-320px; left:25%; animation-duration: 20s; }
-
-@keyframes stGlowFloat{
-  from{ transform: translate3d(-18px,-12px,0) scale(1); }
-  to{ transform: translate3d(22px,18px,0) scale(1.05); }
-}
-
-.bg-noise{
-  position:absolute;
+body:before{
+  content:"";
+  position:fixed;
   inset:0;
-  opacity:.09;
   pointer-events:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
+  background-size:180px 180px;
+  opacity:.08;
   mix-blend-mode: overlay;
+  z-index:0;
 }
-
-.bg-vignette{
-  position:absolute;
+body:after{
+  content:"";
+  position:fixed;
   inset:0;
   pointer-events:none;
   background: radial-gradient(1200px 700px at 50% 35%, rgba(0,0,0,0), rgba(0,0,0,.55));
+  z-index:0;
 }
-
-#cursorGlow{
-  position:fixed;
-  width:320px;
-  height:320px;
-  border-radius:50%;
-  pointer-events:none;
-  opacity:0;
-  transform: translate(-50%,-50%);
-  background:
-    radial-gradient(circle at 35% 35%, rgba(60,255,160,.22), transparent 60%),
-    radial-gradient(circle at 60% 40%, rgba(80,140,255,.20), transparent 60%),
-    radial-gradient(circle at 50% 60%, rgba(255,120,160,.10), transparent 60%);
-  filter: blur(14px);
-  mix-blend-mode: screen;
-  transition: opacity .18s ease;
-  z-index:-1;
-}
-
-/* Transparent FX canvas (NO black fill) */
-.fx-burst-canvas{
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  z-index: 6; /* above bg, below modals typically */
-  background: transparent !important;
-}
-
-/* Ambient pulse layer (event-only) */
-#ambientPulseLayer{
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-}
-.ambient-pulse{
-  position:absolute;
-  left:50%;
-  top:45%;
-  width:720px;
-  height:720px;
-  transform: translate(-50%,-50%) scale(1);
-  filter: blur(48px);
-  animation: stAmbient .85s ease-out forwards;
-  opacity:.24;
-}
-@keyframes stAmbient{
-  0%{ transform: translate(-50%,-50%) scale(.98); opacity:.0; }
-  40%{ transform: translate(-50%,-50%) scale(1.04); opacity:.28; }
-  100%{ transform: translate(-50%,-50%) scale(1.08); opacity:0; }
-}
-
-/* Cinematic screen transitions */
-.screen{
-  transition: opacity .28s ease, transform .28s ease, filter .28s ease;
-  will-change: opacity, transform, filter;
-}
-.screen:not(.active){
-  opacity:0;
-  transform: translateY(10px) scale(.992);
-  filter: blur(6px);
-  pointer-events:none;
-}
-.screen.active{
-  opacity:1;
-  transform: translateY(0) scale(1);
-  filter: blur(0);
-}
-
-/* Premium message hover (safe) */
-.msg{
-  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
-}
-.msg:hover{
-  transform: translateY(-2px);
-  box-shadow: 0 18px 45px rgba(0,0,0,.40);
-  border-color: rgba(255,255,255,.14);
-}
-
-/* Toasts */
-.toast-container{
-  position:fixed;
-  bottom:18px;
-  right:18px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  z-index: 999999;
-}
-.toast{
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(18,18,18,.85);
-  border: 1px solid rgba(255,255,255,.12);
-  color: rgba(255,255,255,.92);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 20px 60px rgba(0,0,0,.55);
-  transform: translateX(18px);
-  opacity: 0;
-  animation: toastIn .20s ease forwards;
-  max-width: min(360px, 86vw);
-  font-weight: 650;
-  letter-spacing: .01em;
-}
-.toast.out{
-  animation: toastOut .22s ease forwards;
-}
-.toast.good{ border-color: rgba(60,255,160,.22); }
-.toast.warn{ border-color: rgba(255,211,107,.22); }
-.toast.info{ border-color: rgba(80,140,255,.22); }
-@keyframes toastIn{ to{ transform: translateX(0); opacity: 1; } }
-@keyframes toastOut{ to{ transform: translateX(18px); opacity: 0; } }
-
-/* HUD */
-.st-hud{
-  position:absolute;
-  top:10px;
-  right:12px;
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:center;
-  pointer-events:none; /* stays purely informational */
-}
-.hud-left, .hud-right{ display:flex; gap:10px; align-items:center; }
-.hud-chip{
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,.22);
-  border: 1px solid rgba(255,255,255,.12);
-  color: rgba(255,255,255,.86);
-  font-size: 12px;
-  letter-spacing:.02em;
-  backdrop-filter: blur(10px);
-}
-.hud-soft{ opacity:.85; }
-.hud-badge{
-  display:flex;
-  gap:8px;
-  align-items:center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,.18);
-  border: 1px solid rgba(255,255,255,.12);
-  backdrop-filter: blur(10px);
-}
-.hud-badge .dot{
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(60,255,160,.92);
-  box-shadow: 0 0 18px rgba(60,255,160,.18);
-  animation: stDotPulse 1.8s ease-in-out infinite;
-}
-@keyframes stDotPulse{
-  0%,100%{ transform: scale(1); opacity:.75; }
-  50%{ transform: scale(1.25); opacity: 1; }
-}
-.hud-badge .txt{ font-weight: 800; letter-spacing:.05em; }
-
-/* Cursor glow OFF in chat */
-#screen-chat.active #cursorGlow{ opacity:0 !important; }
+#root{ position:relative; z-index:1; }
