@@ -449,3 +449,8 @@ body::after {
 
 /* ===== V5 scroll polish ===== */
 #messages{ overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+/* ===== FIX: allow text selection + ensure buttons clickable ===== */
+.topbar, .brand, .pill, .entry-title, .entry-sub { user-select: text !important; }
+button { user-select: none; }
+.admin-path-btn, #adminPathBtn { pointer-events: auto !important; }

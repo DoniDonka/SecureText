@@ -580,11 +580,7 @@
     </div>
 
   </div>
-
-  <script src="firebase.js"></script>
-  <script src="app.js"></script>
-
-  <!-- SAFE INTRO/CONFETTI HELPERS (does NOT touch your app.js) -->
+<!-- SAFE INTRO/CONFETTI HELPERS (does NOT touch your app.js) -->
   <script>
     (function(){
       const overlay = document.getElementById("introOverlay");
@@ -678,6 +674,19 @@
       };
     })();
   </script>
+
+  <!-- App scripts (order matters) -->
+  <script src="firebase.js"></script>
+  <script src="app.js"></script>
   <script src="v5_ux.js"></script>
+
+  <script>
+    // Admin Path button (safe)
+    document.addEventListener("DOMContentLoaded", function () {
+      const btn = document.getElementById("adminPathBtn");
+      if (btn) btn.addEventListener("click", () => (window.location.href = "admin.html"));
+    });
+  </script>
+
 </body>
 </html>
