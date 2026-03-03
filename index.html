@@ -595,11 +595,16 @@
 
       function hardRemoveOverlay(){
         if (!overlay) return;
-        overlay.classList.add("hidden");
+        try {
+          overlay.classList.add("hidden");
+          overlay.style.pointerEvents = "none";
+          overlay.style.opacity = "0";
+          overlay.style.display = "none";
+        } catch {}
         // remove for real so it can NEVER block clicks
         setTimeout(() => {
           try { overlay.parentNode && overlay.parentNode.removeChild(overlay); } catch {}
-        }, 250);
+        }, 80);
       }
 
       // remove once page is ready
