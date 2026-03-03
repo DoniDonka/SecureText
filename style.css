@@ -447,11 +447,5 @@ body::after {
   pointer-events: none !important;
 }
 
-/* ===== V5 performance / scroll polish ===== */
-#messages{
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-.messages, #messages{
-  scrollbar-gutter: stable;
-}
+/* ===== V5 scroll polish ===== */
+#messages{ overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
