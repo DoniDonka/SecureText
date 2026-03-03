@@ -1,8 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // ===== helpers =====
+  // ========= helpers =========
   const $ = (id) => document.getElementById(id);
 
-  // Screens used by THIS app.js
   const screens = {
     class: $("screen-class"),
     pin: $("screen-pin"),
@@ -11,98 +10,61 @@ document.addEventListener("DOMContentLoaded", () => {
     chat: $("screen-chat"),
   };
 
-  // Extra legacy full-screen nodes that might still exist (from older versions / CSS)
-  const legacyFullScreens = ["name-screen", "waiting-screen", "chat-screen"];
-
-  function hardHideEl(el) {
-    if (!el) return;
-    el.classList.remove("active");
-    el.style.display = "none";
-    el.style.opacity = "0";
-    el.style.pointerEvents = "none";
-    el.style.visibility = "hidden";
-  }
-
-  function hardShowEl(el) {
-    if (!el) return;
-    el.classList.add("active");
-    el.style.display = "block";
-    el.style.opacity = "1";
-    el.style.pointerEvents = "auto";
-    el.style.visibility = "visible";
-  }
-
-  // IMPORTANT: Always ensure only ONE main screen can exist/click at once
   function showScreen(key) {
-    // Hide all known screens
-    Object.values(screens).forEach((el) => hardHideEl(el));
-
-    // Also hide any old full-screen elements that can overlay and block clicks
-    legacyFullScreens.forEach((id) => {
-      const el = $(id);
-      if (id === "chat-screen") return;
-      if (el) hardHideEl(el);
+    Object.entries(screens).forEach(([k, el]) => {
+      if (!el) return;
+      el.classList.toggle("active", k === key);
     });
-
-    // Show the target screen
-    hardShowEl(screens[key]);
   }
 
   function escapeHtml(str) {
-    if (!str) return "";
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
+  function fmtTime(ts) {
+    try {
+      if (!ts) return "";
+      if (ts.toDate) return ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  // ========= local storage =========
   function setLS(obj) {
     Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, String(v)));
   }
+  function getLS(k) { return localStorage.getItem(k); }
 
-  function clearLS() {
+  function clearSession() {
     localStorage.removeItem("classId");
     localStorage.removeItem("className");
     localStorage.removeItem("userId");
     localStorage.removeItem("userName");
-    // do NOT clear rules acceptance here unless you want it to re-ask next time
   }
 
-  function classDocRef(classId) {
-    return db.collection("classes").doc(classId);
-  }
+  // ========= Firestore refs (v8 compat) =========
+  function classDocRef(classId) { return db.collection("classes").doc(classId); }
+  function pendingRef(classId, userId) { return classDocRef(classId).collection("pendingUsers").doc(userId); }
+  function bannedRef(classId, userId) { return classDocRef(classId).collection("bannedUsers").doc(userId); }
+  function messagesCol(classId) { return classDocRef(classId).collection("messages"); }
+  function announcementsCol(classId) { return classDocRef(classId).collection("announcements"); }
+  function typingDoc(classId) { return classDocRef(classId).collection("meta").doc("typing"); }
+  function presenceDoc(classId) { return classDocRef(classId).collection("meta").doc("presence"); }
+  function commandsDoc(classId) { return classDocRef(classId).collection("meta").doc("commands"); }
 
-  function pendingRef(classId, userId) {
-    return classDocRef(classId).collection("pendingUsers").doc(userId);
-  }
+  // ========= Rules accepted (keep your original behavior) =========
+  function rulesKey(classId, userId) { return `rulesAccepted_${classId}_${userId}`; }
+  function hasAcceptedRules(classId, userId) { return localStorage.getItem(rulesKey(classId, userId)) === "true"; }
+  function setAcceptedRules(classId, userId) { localStorage.setItem(rulesKey(classId, userId), "true"); }
 
-  function bannedRef(classId, userId) {
-    return classDocRef(classId).collection("bannedUsers").doc(userId);
-  }
-
-  function messagesCol(classId) {
-    return classDocRef(classId).collection("messages");
-  }
-
-  function announcementsCol(classId) {
-    return classDocRef(classId).collection("announcements");
-  }
-
-  function typingDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("typing");
-  }
-
-  // ===== RULES GATE (NEW) =====
-  function rulesKey(classId, userId) {
-    return `rulesAccepted:${classId}:${userId}`;
-  }
-
-  function hasAcceptedRules(classId, userId) {
-    return localStorage.getItem(rulesKey(classId, userId)) === "true";
-  }
-
-  function setAcceptedRules(classId, userId) {
-    localStorage.setItem(rulesKey(classId, userId), "true");
-  }
-
-  function showRulesGate({ classId, userId, userName, className }, onContinue) {
+function showRulesGate({ classId, userId, userName, className }, onContinue) {
     if (hasAcceptedRules(classId, userId)) {
       onContinue();
       return;
@@ -336,949 +298,656 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  // ===== state =====
+  // ========= Settings (Theme + Sound) =========
+  const SETTINGS_KEY = "st_settings_v2";
+  const DEFAULT_SETTINGS = { theme: "night", sound: true };
+  function getSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return { ...DEFAULT_SETTINGS };
+      const p = JSON.parse(raw);
+      return {
+        theme: p.theme === "day" ? "day" : "night",
+        sound: p.sound !== false,
+      };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+  function setSettings(next) {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        theme: next.theme === "day" ? "day" : "night",
+        sound: !!next.sound,
+      }));
+    } catch {}
+  }
+
+  function applyTheme(mode) {
+    const cs = $("chat-screen");
+    if (!cs) return;
+    cs.classList.remove("day", "night");
+    cs.classList.add(mode === "day" ? "day" : "night");
+    const tbtn = $("themeToggle");
+    if (tbtn) tbtn.textContent = mode === "day" ? "☀️" : "🌙";
+  }
+
+  // ===== Sound synth (no external files) =====
+  let soundEnabled = getSettings().sound;
+  function setSoundEnabled(v) { soundEnabled = !!v; }
+  function playSound(type) {
+    if (!soundEnabled) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      let freq = 520, dur = 0.07;
+      if (type === "send") { freq = 620; dur = 0.06; }
+      if (type === "receive") { freq = 520; dur = 0.07; }
+      if (type === "approve") { freq = 740; dur = 0.10; }
+      if (type === "deny") { freq = 220; dur = 0.09; }
+      o.frequency.setValueAtTime(freq, now);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.start(now);
+      o.stop(now + dur + 0.02);
+      o.onended = () => { try { ctx.close(); } catch {} };
+    } catch {}
+  }
+
+  // ========= Notifications (tab hidden only) =========
+  const NOTIF_ASK_KEY = "st_notif_asked";
+  function requestNotificationPermissionOnce() {
+    try {
+      if (!("Notification" in window)) return;
+      if (localStorage.getItem(NOTIF_ASK_KEY) === "1") return;
+      localStorage.setItem(NOTIF_ASK_KEY, "1");
+      if (Notification.permission === "default") Notification.requestPermission().catch(()=>{});
+    } catch {}
+  }
+  function maybeNotify(className, from, text) {
+    try {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+      if (!document.hidden) return;
+      const body = (text || "").length > 140 ? (text || "").slice(0, 140) + "…" : (text || "");
+      new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
+    } catch {}
+  }
+
+  // ========= toasts (optional if present) =========
+  function toast(msg) {
+    if (window.ST_UIX && typeof window.ST_UIX.toast === "function") window.ST_UIX.toast(msg, "info");
+  }
+
+  // ========= listener cleanup =========
+  let chatUnsubs = [];
+  function clearChatListeners() {
+    chatUnsubs.forEach((u) => { try { u(); } catch {} });
+    chatUnsubs = [];
+    stopPresence();
+  }
+
+  // ========= presence =========
+  let presenceTimer = null;
+  function stopPresence() {
+    if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; }
+  }
+  function startPresence(classId, userId) {
+    stopPresence();
+    const ref = presenceDoc(classId);
+    const beat = async () => {
+      try {
+        await ref.set({ [userId]: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      } catch {}
+    };
+    beat();
+    presenceTimer = setInterval(beat, 30000);
+
+    const unsub = ref.onSnapshot((doc) => {
+      const data = (doc && doc.exists) ? (doc.data() || {}) : {};
+      const now = Date.now();
+      const TTL = 90000;
+      let count = 0;
+      Object.values(data).forEach((v) => {
+        if (!v || !v.toDate) return;
+        const ms = v.toDate().getTime();
+        if (ms && now - ms <= TTL) count++;
+      });
+      const badge = $("onlineBadge");
+      if (badge) badge.textContent = `• ${count} online`;
+    });
+    chatUnsubs.push(unsub);
+  }
+
+  // ========= typing =========
+  let typingTimeout = null;
+  let typingDebounce = null;
+  let localTyping = false;
+  async function setTyping(classId, userId, val) {
+    if (localTyping === val) return;
+    localTyping = val;
+    try { await typingDoc(classId).set({ [userId]: !!val }, { merge: true }); } catch {}
+  }
+
+  // prevent "stuck typing" by auto-clearing stale 'true' values (client-side)
+  function renderTypingIndicator(docData, myId) {
+    const el = $("typingIndicator");
+    if (!el) return;
+    const data = docData || {};
+    const others = Object.entries(data).filter(([id,v]) => id !== myId && v === true);
+    if (others.length) {
+      el.innerHTML = `<span class="typing-bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="muted" style="margin-left:8px">Someone is typing…</span>`;
+    } else {
+      el.innerHTML = "";
+    }
+  }
+
+  // ========= commands listener (admin control) =========
+  function startCommandsListener(classId, userId, handlers) {
+    const ref = commandsDoc(classId);
+    const keyBase = `st_cmd_${classId}_`;
+    let initialized = false;
+    const unsub = ref.onSnapshot((doc) => {
+      const data = (doc && doc.exists) ? (doc.data() || {}) : {};
+      const logoutNonce = Number(data.logoutNonce || 0);
+      const rulesNonce = Number(data.rulesNonce || 0);
+      const refreshNonce = Number(data.refreshNonce || 0);
+
+      if (!initialized) {
+        initialized = true;
+        sessionStorage.setItem(keyBase+"logout", String(logoutNonce));
+        sessionStorage.setItem(keyBase+"rules", String(rulesNonce));
+        sessionStorage.setItem(keyBase+"refresh", String(refreshNonce));
+        if (handlers.onLock) handlers.onLock(!!data.locked, data.lockMessage || "");
+        if (handlers.onTheme && (data.theme === "day" || data.theme === "night")) handlers.onTheme(data.theme);
+        return;
+      }
+
+      const lastLogout = Number(sessionStorage.getItem(keyBase+"logout") || "0");
+      const lastRules = Number(sessionStorage.getItem(keyBase+"rules") || "0");
+      const lastRefresh = Number(sessionStorage.getItem(keyBase+"refresh") || "0");
+
+      if (logoutNonce > lastLogout) {
+        sessionStorage.setItem(keyBase+"logout", String(logoutNonce));
+        handlers.onLogout && handlers.onLogout();
+      }
+      if (rulesNonce > lastRules) {
+        sessionStorage.setItem(keyBase+"rules", String(rulesNonce));
+        handlers.onRerules && handlers.onRerules();
+      }
+      if (refreshNonce > lastRefresh) {
+        sessionStorage.setItem(keyBase+"refresh", String(refreshNonce));
+        handlers.onRefresh && handlers.onRefresh();
+      }
+
+      handlers.onLock && handlers.onLock(!!data.locked, data.lockMessage || "");
+      if (handlers.onTheme && (data.theme === "day" || data.theme === "night")) handlers.onTheme(data.theme);
+    });
+    chatUnsubs.push(unsub);
+  }
+
+  // ========= lock overlay (reuse your old one if present) =========
+  let chatLocked = false;
+  function setChatLocked(val, msg) {
+    chatLocked = !!val;
+    // If you already have overlay from older code, keep it. Otherwise minimal.
+    let lock = document.getElementById("stLockOverlay");
+    if (!lock) {
+      lock = document.createElement("div");
+      lock.id = "stLockOverlay";
+      lock.className = "st-lock";
+      lock.innerHTML = `
+        <div class="st-lock-card">
+          <div class="st-lock-title">CHAT LOCKED</div>
+          <div id="stLockMsg" class="st-lock-msg">Chat is temporarily locked by admin.</div>
+        </div>`;
+      document.body.appendChild(lock);
+    }
+    const msgEl = document.getElementById("stLockMsg");
+    if (msgEl) msgEl.textContent = msg || "Chat is temporarily locked by admin.";
+    lock.classList.toggle("active", chatLocked);
+  }
+  function isChatLocked() { return !!chatLocked; }
+
+  // ========= replies + delete + spam filter =========
+  let activeReplyTo = null;
+  let repliesUnsub = null;
+
+  function ensureRepliesUI() {
+    let panel = document.getElementById("repliesPanel");
+    if (panel) return panel;
+    panel = document.createElement("div");
+    panel.id = "repliesPanel";
+    panel.className = "replies hidden";
+    panel.innerHTML = `
+      <div class="replies-header">
+        <div class="muted"><span id="repliesTitle">Replies</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="cancelReplyBtn" type="button" title="Cancel reply">✕</button>
+          <button id="closeRepliesBtn" type="button">Close</button>
+        </div>
+      </div>
+      <div id="repliesList" class="replies-list"></div>
+      <div class="reply-input">
+        <input id="replyInput" type="text" placeholder="Reply…" autocomplete="off" />
+        <button id="sendReplyBtn" type="button">Send</button>
+      </div>
+    `;
+    const host = document.getElementById("chat-screen") || document.body;
+    host.appendChild(panel);
+    return panel;
+  }
+
+  function closeRepliesPanel() {
+    const panel = document.getElementById("repliesPanel");
+    if (panel) panel.classList.add("hidden");
+    activeReplyTo = null;
+    const title = document.getElementById("repliesTitle");
+    if (title) title.textContent = "Replies";
+    if (repliesUnsub) { try { repliesUnsub(); } catch {} repliesUnsub = null; }
+    const list = document.getElementById("repliesList");
+    if (list) list.innerHTML = "";
+  }
+
+  function openRepliesForMessage(classId, userId, parentId, parentName) {
+    const panel = ensureRepliesUI();
+    panel.classList.remove("hidden");
+    activeReplyTo = { id: parentId, name: parentName || "User" };
+    const title = document.getElementById("repliesTitle");
+    if (title) title.textContent = `Replying to ${activeReplyTo.name}`;
+
+    if (repliesUnsub) { try { repliesUnsub(); } catch {} repliesUnsub = null; }
+
+    const list = document.getElementById("repliesList");
+    if (list) list.innerHTML = `<div class="muted" style="padding:10px">Loading replies…</div>`;
+
+    repliesUnsub = messagesCol(classId)
+      .where("replyTo", "==", parentId)
+      .orderBy("timestamp", "asc")
+      .limitToLast(75)
+      .onSnapshot((snap) => {
+        if (!list) return;
+        list.innerHTML = "";
+        if (snap.empty) {
+          list.innerHTML = `<div class="muted" style="padding:10px">No replies yet.</div>`;
+          return;
+        }
+        snap.forEach((d) => {
+          const m = d.data() || {};
+          const row = document.createElement("div");
+          row.className = "reply-row";
+          row.innerHTML = `<div class="reply-top"><strong>${escapeHtml(m.name || "User")}</strong> <span class="muted">${fmtTime(m.timestamp)}</span></div>`;
+          const body = document.createElement("div");
+          body.className = "reply-text";
+          body.textContent = (m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)") ? "(deleted)" : (m.text || "");
+          row.appendChild(body);
+          if (m.userId && m.userId === userId && !m.deleted && String(m.text||"").trim().toLowerCase()!=="(deleted)") {
+            const del = document.createElement("button");
+            del.type="button"; del.className="msg-btn msg-del"; del.textContent="Delete";
+            del.onclick = () => deleteMyMessage(d.ref);
+            row.appendChild(del);
+          }
+          list.appendChild(row);
+        });
+        list.scrollTop = list.scrollHeight;
+      });
+
+    chatUnsubs.push(repliesUnsub);
+
+    const closeBtn = document.getElementById("closeRepliesBtn");
+    if (closeBtn) closeBtn.onclick = closeRepliesPanel;
+    const cancelBtn = document.getElementById("cancelReplyBtn");
+    if (cancelBtn) cancelBtn.onclick = closeRepliesPanel;
+  }
+
+  async function deleteMyMessage(docRef) {
+    if (!docRef) return;
+    if (!confirm("Delete this message?")) return;
+    try {
+      await docRef.set({
+        deleted: true,
+        text: "(deleted)",
+        deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return;
+    } catch {}
+    try {
+      await docRef.delete();
+    } catch {}
+  }
+
+  // spam filter
+  let lastSendAt = 0;
+  let lastSendText = "";
+  const recentTexts = [];
+  const SPAM_MIN_INTERVAL_MS = 1100;
+  const SPAM_REPEAT_WINDOW_MS = 12000;
+  const SPAM_MAX_REPEAT = 2;
+  const SPAM_MAX_LEN = 350;
+
+  // ========= UI rendering =========
+  function buildMsgEl(msg, userId) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg";
+    wrap.dataset.id = msg.id || "";
+    wrap.dataset.userid = msg.userId || "";
+    if (msg.replyTo) wrap.dataset.replyto = msg.replyTo;
+
+    const top = document.createElement("div");
+    top.className = "msg-top";
+    top.innerHTML = `<strong>${escapeHtml(msg.name || "User")}</strong> <span class="muted">${fmtTime(msg.timestamp)}</span>`;
+    wrap.appendChild(top);
+
+    const body = document.createElement("div");
+    body.className = "msg-text";
+    const isDeleted = !!msg.deleted || (String(msg.text||"").trim().toLowerCase()==="(deleted)");
+    body.textContent = isDeleted ? "(deleted)" : (msg.text || "");
+    if (isDeleted) body.classList.add("deleted");
+    wrap.appendChild(body);
+
+    // reply preview (optional)
+    if (msg.replyTo) {
+      const pill = document.createElement("div");
+      pill.className = "reply-pill";
+      pill.textContent = "↩ reply";
+      wrap.insertBefore(pill, body);
+    }
+
+    if (!isDeleted) {
+      const actions = document.createElement("div");
+      actions.className = "msg-actions";
+
+      const replyBtn = document.createElement("button");
+      replyBtn.type="button"; replyBtn.className="msg-btn msg-reply";
+      replyBtn.textContent="Reply"; replyBtn.dataset.action="reply";
+      actions.appendChild(replyBtn);
+
+      if (msg.userId && msg.userId === userId) {
+        const delBtn = document.createElement("button");
+        delBtn.type="button"; delBtn.className="msg-btn msg-del";
+        delBtn.textContent="Delete"; delBtn.dataset.action="delete";
+        actions.appendChild(delBtn);
+      }
+
+      wrap.appendChild(actions);
+    }
+
+    return wrap;
+  }
+
+  // ========= main flow =========
   let selectedClassId = null;
   let selectedClassName = null;
 
-  // ===== restore session on refresh =====
-  const savedClassId = localStorage.getItem("classId");
-  const savedUserId = localStorage.getItem("userId");
-  const savedUserName = localStorage.getItem("userName");
-  const savedClassName = localStorage.getItem("className");
-
-  if (savedClassId && savedUserId && savedUserName) {
-    selectedClassId = savedClassId;
-    selectedClassName = savedClassName || savedClassId;
-    restoreFlow(savedClassId, savedUserId, savedUserName);
-  } else {
-    loadClasses();
-    showScreen("class");
-  }
-
-  // ===== UI events =====
-  const pinBackBtn = $("pinBackBtn");
-  if (pinBackBtn) {
-    pinBackBtn.onclick = () => {
-      $("pinInput").value = "";
-      $("pinError").textContent = "";
-      showScreen("class");
-    };
-  }
-
-  const nameBackBtn = $("nameBackBtn");
-  if (nameBackBtn) {
-    nameBackBtn.onclick = () => {
-      $("nameInput").value = "";
-      $("nameError").textContent = "";
-      showScreen("pin");
-    };
-  }
-
-  const resetBtn = $("resetBtn");
-  if (resetBtn) {
-    resetBtn.onclick = () => {
-      clearLS();
-      location.reload();
-    };
-  }
-
-  const logoutBtn = $("logoutBtn");
-  if (logoutBtn) {
-    logoutBtn.onclick = () => {
-      clearLS();
-      location.reload();
-    };
-  }
-
-  // ===== 1) Load classes dynamically =====
-  function loadClasses() {
-    const classesWrap = $("classes");
-    const err = $("classError");
-    if (!classesWrap) return;
-
-    classesWrap.innerHTML = "Loading classes...";
-    if (err) err.textContent = "";
-
-    db.collection("classes")
-      .get()
-      .then((snap) => {
-        classesWrap.innerHTML = "";
-        if (snap.empty) {
-          if (err) err.textContent = "No classes found in Firestore (collection must be named 'classes').";
-          return;
-        }
-
-        snap.forEach((doc) => {
-          const data = doc.data() || {};
-          const btn = document.createElement("button");
-          btn.className = "class-btn";
-          btn.type = "button";
-          btn.textContent = data.name || doc.id;
-
-          btn.onclick = () => {
-            selectedClassId = doc.id;
-            selectedClassName = data.name || doc.id;
-
-            const pinClassName = $("pinClassName");
-            if (pinClassName) pinClassName.textContent = selectedClassName;
-
-            $("pinError").textContent = "";
-            $("pinInput").value = "";
-            showScreen("pin");
-          };
-
-          classesWrap.appendChild(btn);
-        });
-      })
-      .catch((e) => {
-        if (err) err.textContent = "Failed to load classes. Check Firestore rules + config.";
-        console.error(e);
+  async function loadClasses() {
+    const classesDiv = $("classes");
+    const classError = $("classError");
+    if (classError) classError.textContent = "";
+    if (!classesDiv) return;
+    classesDiv.textContent = "Loading…";
+    try {
+      const snap = await db.collection("classes").get();
+      classesDiv.innerHTML = "";
+      if (snap.empty) {
+        classesDiv.innerHTML = `<div class="muted">No classes found.</div>`;
+        return;
+      }
+      snap.forEach((doc) => {
+        const data = doc.data() || {};
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = data.name || doc.id;
+        btn.onclick = () => {
+          selectedClassId = doc.id;
+          selectedClassName = data.name || doc.id;
+          const pinName = $("pinClassName");
+          if (pinName) pinName.textContent = selectedClassName;
+          showScreen("pin");
+        };
+        classesDiv.appendChild(btn);
       });
+    } catch {
+      if (classError) classError.textContent = "Failed to load classes.";
+      classesDiv.textContent = "";
+    }
   }
 
-  // ===== 2) PIN verify =====
+  // PIN screen
+  const pinBackBtn = $("pinBackBtn");
   const pinContinueBtn = $("pinContinueBtn");
+  const pinInput = $("pinInput");
+  const pinError = $("pinError");
+
+  if (pinBackBtn) pinBackBtn.onclick = () => showScreen("class");
   if (pinContinueBtn) {
     pinContinueBtn.onclick = async () => {
-      const pin = $("pinInput").value.trim();
-      if (!selectedClassId) {
-        $("pinError").textContent = "No class selected.";
-        return;
-      }
+      if (!selectedClassId) return;
+      if (pinError) pinError.textContent = "";
+      const pin = (pinInput && pinInput.value ? pinInput.value : "").trim();
       if (!pin) {
-        $("pinError").textContent = "Enter a PIN.";
+        if (pinError) pinError.textContent = "Enter the class PIN.";
         return;
       }
-
       try {
         const clsDoc = await classDocRef(selectedClassId).get();
         if (!clsDoc.exists) {
-          $("pinError").textContent = "Class not found.";
+          if (pinError) pinError.textContent = "Class not found.";
           return;
         }
         const data = clsDoc.data() || {};
-        if (String(data.pin || "") !== pin) {
-          $("pinError").textContent = "Wrong PIN!";
+        const correctPin = String(data.pin || "").trim();
+        if (String(pin) !== correctPin) {
+          if (pinError) pinError.textContent = "Incorrect PIN.";
           return;
         }
-
-        $("pinError").textContent = "";
-        $("nameError").textContent = "";
-        $("nameInput").value = "";
         showScreen("name");
-      } catch (e) {
-        console.error(e);
-        $("pinError").textContent = "PIN check failed. Check Firestore rules.";
+      } catch {
+        if (pinError) pinError.textContent = "PIN check failed.";
       }
     };
   }
 
-  // ===== 3) Create pending user =====
+  // NAME screen
+  const nameBackBtn = $("nameBackBtn");
   const nameContinueBtn = $("nameContinueBtn");
+  const nameInput = $("nameInput");
+  const nameError = $("nameError");
+
+  if (nameBackBtn) nameBackBtn.onclick = () => showScreen("pin");
+
   if (nameContinueBtn) {
     nameContinueBtn.onclick = async () => {
-      const name = $("nameInput").value.trim();
-      if (!selectedClassId) {
-        $("nameError").textContent = "No class selected.";
-        return;
-      }
+      if (!selectedClassId) return;
+      if (nameError) nameError.textContent = "";
+      const name = (nameInput && nameInput.value ? nameInput.value : "").trim();
       if (!name) {
-        $("nameError").textContent = "Enter a name.";
+        if (nameError) nameError.textContent = "Enter your name.";
         return;
       }
-
-      const userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-
+      const userId = getLS("userId") || Math.random().toString(36).slice(2, 12);
       try {
         const bannedDoc = await bannedRef(selectedClassId, userId).get();
         if (bannedDoc.exists) {
-          showDenied("You are banned from this class.");
+          showScreen("wait");
+          setText("waitStatus","You are banned.");
           return;
         }
-
         await pendingRef(selectedClassId, userId).set({
           name,
-          userId,
-          classId: selectedClassId,
-          className: selectedClassName || selectedClassId,
           status: "pending",
-          approved: false,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
         });
-
         setLS({
           classId: selectedClassId,
           className: selectedClassName || selectedClassId,
           userId,
           userName: name,
         });
-
-        showWaiting(name, selectedClassId);
+        showScreen("wait");
+        const waitStatus = $("waitStatus");
+        if (waitStatus) waitStatus.textContent = "Waiting for admin approval…";
         watchStatus(selectedClassId, userId, name);
-      } catch (e) {
-        console.error(e);
-        $("nameError").textContent = "Failed to submit. Check Firestore rules.";
+      } catch {
+        if (nameError) nameError.textContent = "Request failed.";
       }
     };
   }
 
-  // ===== waiting screen =====
-  function showWaiting(name, classId) {
-    const waitText = $("waitText");
-    const waitStatus = $("waitStatus");
+  function setText(id, txt) { const el = $(id); if (el) el.textContent = txt || ""; }
 
-    if (waitText) waitText.textContent = `${name}, you requested access to ${selectedClassName || classId}.`;
-    if (waitStatus) {
-      waitStatus.textContent = "";
-      waitStatus.className = "notice";
-    }
-
-    showScreen("wait");
-  }
-
-  function showDenied(msg) {
-    const waitText = $("waitText");
-    const waitStatus = $("waitStatus");
-
-    if (waitText) waitText.textContent = "Access blocked.";
-    if (waitStatus) {
-      waitStatus.textContent = msg;
-      waitStatus.className = "notice bad";
-    }
-
-    showScreen("wait");
-  }
-
-  // ===== restore =====
-  async function restoreFlow(classId, userId, name) {
-    try {
-      const banDoc = await bannedRef(classId, userId).get();
-      if (banDoc.exists) {
-        showDenied("You are banned from this class.");
-        return;
-      }
-
-      const pDoc = await pendingRef(classId, userId).get();
-      if (!pDoc.exists) {
-        clearLS();
-        loadClasses();
-        showScreen("class");
-        return;
-      }
-
-      const data = pDoc.data() || {};
-      const status = data.status || (data.approved ? "approved" : "pending");
-
-      if (status === "approved") {
-        showRulesGate(
-          {
-            classId,
-            userId,
-            userName: name,
-            className: selectedClassName || data.className || classId,
-          },
-          () => loadChat(name, classId, userId)
-        );
-      } else if (status === "rejected") {
-        showDenied("You were rejected by the admin.");
-      } else if (status === "banned") {
-        showDenied("You are banned from this class.");
-      } else {
-        showWaiting(name, classId);
-        watchStatus(classId, userId, name);
-      }
-    } catch (e) {
-      console.error(e);
-      showWaiting(name, classId);
-      watchStatus(classId, userId, name);
-    }
-  }
-
-  // ===== status watcher =====
   function watchStatus(classId, userId, name) {
-    pendingRef(classId, userId).onSnapshot((doc) => {
+    clearChatListeners();
+    const waitStatus = $("waitStatus");
+    const unsub = pendingRef(classId, userId).onSnapshot((doc) => {
       if (!doc.exists) {
-        showDenied("Your request was removed (denied).");
+        if (waitStatus) waitStatus.textContent = "Request not found.";
         return;
       }
-
       const data = doc.data() || {};
-      const status = data.status || (data.approved ? "approved" : "pending");
-
+      const status = data.status;
       if (status === "approved") {
-        showRulesGate(
-          {
-            classId,
-            userId,
-            userName: name,
-            className: selectedClassName || data.className || classId,
-          },
-          () => loadChat(name, classId, userId)
-        );
+        playSound("approve");
+        showRulesGate({ classId, userId, userName: name, className: selectedClassName || classId }, () => {
+          requestNotificationPermissionOnce();
+          loadChat(classId, userId, name);
+        });
       } else if (status === "rejected") {
-        showDenied("You were rejected by the admin.");
+        if (waitStatus) waitStatus.textContent = "You were rejected by the admin.";
       } else if (status === "banned") {
-        showDenied("You are banned from this class.");
+        if (waitStatus) waitStatus.textContent = "You are banned.";
       } else {
-        const waitStatus = $("waitStatus");
-        if (waitStatus) {
-          waitStatus.textContent = "Pending approval...";
-          waitStatus.className = "notice warn";
-        }
+        if (waitStatus) waitStatus.textContent = "Waiting for admin approval…";
       }
     });
-
-    bannedRef(classId, userId).onSnapshot((doc) => {
-      if (doc.exists) showDenied("You are banned from this class.");
-    });
+    chatUnsubs.push(unsub);
   }
 
-  // ===== CHAT (OPTIMIZED RENDERING) =====
-  let chatUnsubs = [];
-  function clearChatListeners() {
-    chatUnsubs.forEach((u) => {
-      try { u(); } catch {}
-    });
-    chatUnsubs = [];
-  }
-
-  function isNearBottom(el, thresholdPx = 120) {
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
-  }
-
-  function fmtTime(ts) {
-    return ts && ts.toDate
-      ? ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : "Sending...";
-  }
-
-  function buildMsgEl({ docId, name, userId, text, time, isOwn }) {
-    const wrap = document.createElement("div");
-    wrap.className = `msg ${isOwn ? "own" : ""}`;
-    wrap.dataset.id = docId;
-
-    wrap.innerHTML = `
-      <div class="msg-top">
-        <strong>${escapeHtml(name || "")}</strong>
-        <span class="msg-time">${escapeHtml(time || "")}</span>
-      </div>
-      <div class="msg-text">${escapeHtml(text || "")}</div>
-      <div class="msg-actions">
-        <button class="reply-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">Reply</button>
-        <button class="view-replies-btn" data-id="${docId}" data-text="${encodeURIComponent(text || "")}">View replies</button>
-        ${isOwn ? `<button class="delete-btn" data-id="${docId}" data-parent="null">Delete</button>` : ""}
-      </div>
-    `;
-    return wrap;
-  }
-
-  function updateMsgEl(el, { name, text, time, isOwn }) {
+  // ===== chat =====
+  function flashStatus(msg, kind) {
+    const el = $("chatStatus");
     if (!el) return;
-
-    // class own/non-own
-    el.className = `msg ${isOwn ? "own" : ""}`;
-
-    const strong = el.querySelector(".msg-top strong");
-    if (strong) strong.textContent = name || "";
-
-    const t = el.querySelector(".msg-time");
-    if (t) t.textContent = time || "";
-
-    const txt = el.querySelector(".msg-text");
-    if (txt) txt.innerHTML = escapeHtml(text || "");
-
-    // update action buttons dataset text
-    const replyBtn = el.querySelector(".reply-btn");
-    const viewBtn = el.querySelector(".view-replies-btn");
-    if (replyBtn) replyBtn.dataset.text = encodeURIComponent(text || "");
-    if (viewBtn) viewBtn.dataset.text = encodeURIComponent(text || "");
-
-    // ensure delete button exists only if own
-    const actions = el.querySelector(".msg-actions");
-    if (actions) {
-      const del = actions.querySelector(".delete-btn");
-      if (isOwn && !del) {
-        const b = document.createElement("button");
-        b.className = "delete-btn";
-        b.dataset.id = el.dataset.id;
-        b.dataset.parent = "null";
-        b.textContent = "Delete";
-        actions.appendChild(b);
-      }
-      if (!isOwn && del) del.remove();
-    }
+    el.textContent = msg || "";
+    el.classList.remove("bad","warn");
+    if (kind==="bad") el.classList.add("bad");
+    if (kind==="warn") el.classList.add("warn");
   }
 
-  function loadChat(name, classId, userId) {
+  function loadChat(classId, userId, name) {
     clearChatListeners();
+    showScreen("chat");
+
+    // apply settings
+    const st = getSettings();
+    applyTheme(st.theme);
+    setSoundEnabled(st.sound);
 
     const chatWelcome = $("chatWelcome");
     const chatSubtitle = $("chatSubtitle");
-    const chatStatus = $("chatStatus");
-
     if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
     if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
-    if (chatStatus) chatStatus.textContent = "";
 
-    showScreen("chat");
+    // ensure online badge
+    if (!$("onlineBadge") && chatSubtitle && chatSubtitle.parentElement) {
+      const b = document.createElement("span");
+      b.id="onlineBadge";
+      b.className="online-badge";
+      b.textContent="• 0 online";
+      chatSubtitle.parentElement.appendChild(b);
+    }
 
-    const msgInput = $("msgInput");
-    const sendBtn = $("sendBtn");
-    const messagesDiv = $("messages");
-    const typingDiv = $("typingIndicator");
+    // quick theme toggle (still works)
     const themeToggle = $("themeToggle");
-
-    // theme toggle
     if (themeToggle) {
       themeToggle.onclick = () => {
-        const screen = $("chat-screen");
-        if (!screen) return;
-        const isDay = screen.classList.contains("day");
-        if (isDay) {
-          screen.classList.remove("day");
-          screen.classList.add("night");
-          themeToggle.textContent = "🌙";
-        } else {
-          screen.classList.remove("night");
-          screen.classList.add("day");
-          themeToggle.textContent = "☀️";
-        }
+        const cur = getSettings();
+        const next = { ...cur, theme: cur.theme === "day" ? "night" : "day" };
+        setSettings(next);
+        applyTheme(next.theme);
+        playSound("send");
       };
     }
 
-    // announcements (per-class) - small list, OK to re-render
-    chatUnsubs.push(
-      announcementsCol(classId)
-        .orderBy("timestamp", "asc")
-        .onSnapshot((snap) => {
-          const box = $("announcementsList");
-          if (!box) return;
-          box.innerHTML = "";
-          snap.forEach((doc) => {
-            const a = doc.data() || {};
-            const t = fmtTime(a.timestamp);
-            const div = document.createElement("div");
-            div.innerHTML = `<div style="margin:6px 0;"><strong>[${escapeHtml(t)}]</strong> ${escapeHtml(a.text || "")}</div>`;
-            box.appendChild(div);
-          });
-          if (snap.empty) box.innerHTML = "<div style='opacity:.7;margin-top:6px;'>No announcements.</div>";
-        })
-    );
-
-    // typing indicator (per-class) - debounce + state-aware writes
-    let typingTimeout = null;
-    let typingDebounce = null;
-    let localTyping = false;
-
-    async function setTyping(val) {
-      if (localTyping === val) return; // avoid spamming
-      localTyping = val;
-      try {
-        await typingDoc(classId).set({ [userId]: val }, { merge: true });
-      } catch {}
-    }
-
-    if (msgInput) {
-      msgInput.oninput = () => {
-        // debounce the "true" write
-        if (typingDebounce) clearTimeout(typingDebounce);
-        typingDebounce = setTimeout(() => {
-          setTyping(true);
-        }, 220);
-
-        if (typingTimeout) clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => {
-          setTyping(false);
-        }, 1500);
+    // logout
+    const logoutBtn = $("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.onclick = () => {
+        clearChatListeners();
+        clearSession();
+        selectedClassId = null; selectedClassName = null;
+        showScreen("class");
+        loadClasses();
       };
     }
 
-    // best-effort cleanup
-    window.addEventListener("beforeunload", () => {
-      try {
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      } catch {}
+    // presence
+    startPresence(classId, userId);
+
+    // cached ban state
+    window.__st_isBanned = false;
+    try {
+      const banUnsub = bannedRef(classId, userId).onSnapshot((d) => {
+        window.__st_isBanned = !!(d && d.exists);
+      });
+      chatUnsubs.push(banUnsub);
+    } catch {}
+
+    // commands listener (admin)
+    startCommandsListener(classId, userId, {
+      onLogout: () => {
+        clearChatListeners();
+        clearSession();
+        selectedClassId = null; selectedClassName = null;
+        showScreen("class");
+        loadClasses();
+      },
+      onRerules: () => {
+        localStorage.removeItem(rulesKey(classId,userId));
+        showRulesGate({ classId, userId, userName: name, className: selectedClassName || classId }, () => {});
+      },
+      onRefresh: () => location.reload(),
+      onLock: (locked,msg) => setChatLocked(locked,msg),
+      onTheme: (mode) => applyTheme(mode),
     });
 
-    chatUnsubs.push(
-      typingDoc(classId).onSnapshot((doc) => {
-        if (!typingDiv) return;
-        if (!doc.exists) {
-          typingDiv.textContent = "";
-          return;
-        }
-        const data = doc.data() || {};
-        const othersTyping = Object.entries(data).some(([id, val]) => id !== userId && val === true);
-        typingDiv.textContent = othersTyping ? "Someone is typing..." : "";
-      })
-    );
-
-    // send message (MAIN)
-    if (sendBtn && msgInput) {
-
-      // ===== Spam filter (client-side) =====
-      // Keeps quota low (no extra reads/writes) and stops flood.
-      let lastSendAt = 0;
-      let lastSendText = "";
-      const recentTexts = []; // { t, at }
-      const SPAM_MIN_INTERVAL_MS = 1100;   // 1.1s cooldown
-      const SPAM_REPEAT_WINDOW_MS = 12000; // 12s window
-      const SPAM_MAX_REPEAT = 2;           // allow 2 repeats then block
-      const SPAM_MAX_LEN = 350;            // max length
-      sendBtn.onclick = async () => {
-        let text = msgInput.value;
-        if (text == null) return;
-        text = String(text).trim();
-
-        // spam filter / validation
-        const now = Date.now();
-        if (!text) return;
-
-        // collapse extreme whitespace
-        text = text.replace(/\s{3,}/g, "  ");
-
-        if (text.length > SPAM_MAX_LEN) {
-          flashStatus(`Message too long (max ${SPAM_MAX_LEN}).`, "warn");
-          playSound("deny");
-          return;
-        }
-
-        if (now - lastSendAt < SPAM_MIN_INTERVAL_MS) {
-          flashStatus("Slow down.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        // repeat filter
-        const cutoff = now - SPAM_REPEAT_WINDOW_MS;
-        while (recentTexts.length && recentTexts[0].at < cutoff) recentTexts.shift();
-        const repeats = recentTexts.filter(r => r.t === text).length;
-        if (repeats >= SPAM_MAX_REPEAT || (lastSendText === text && now - lastSendAt < SPAM_REPEAT_WINDOW_MS)) {
-          flashStatus("Duplicate spam blocked.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        if (isChatLocked()) {
-          flashStatus("Chat is locked by admin.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        // cached ban check (no per-send reads)
-        if (window.__st_isBanned) {
-          flashStatus("You are banned.", "bad");
-          playSound("deny");
-          return;
-        }
-
-        sendBtn.disabled = true;
-        try {
-          await messagesCol(classId).add({
-            userId,
-            name,
-            text,
-            replyTo: null,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-
-          msgInput.value = "";
-          try { setTyping(false); } catch {}
-          playSound("send");
-
-          lastSendAt = now;
-          lastSendText = text;
-          recentTexts.push({ t: text, at: now });
-        } catch (e) {
-          flashStatus("Failed to send.", "bad");
-        } finally {
-          sendBtn.disabled = false;
-        }
-      };
-    }
-
-    // ===== LIVE MESSAGES (OPTIMIZED: docChanges, no full re-render) =====
-    const msgEls = new Map(); // docId -> element
-
-    function clearAllMessages() {
-      msgEls.clear();
-      if (messagesDiv) messagesDiv.innerHTML = "";
-    }
-
-    clearAllMessages();
-
-    chatUnsubs.push(
-      messagesCol(classId)
-        .orderBy("timestamp", "asc")
-        .onSnapshot(
-          (snap) => {
-            if (!messagesDiv) return;
-
-            const shouldStick = isNearBottom(messagesDiv, 160);
-
-            const frag = document.createDocumentFragment();
-
-            snap.docChanges().forEach((ch) => {
-              const doc = ch.doc;
-              const m = doc.data() || {};
-
-              // Only main messages
-              if (m.replyTo !== null) return;
-
-              const docId = doc.id;
-
-              if (ch.type === "removed") {
-                const el = msgEls.get(docId);
-                if (el && el.parentNode) el.parentNode.removeChild(el);
-                msgEls.delete(docId);
-                return;
-              }
-
-              const isOwn = m.userId === userId;
-              const time = fmtTime(m.timestamp);
-
-              if (ch.type === "added") {
-                // create + append in order
-                const el = buildMsgEl({
-                  docId,
-                  name: m.name || "",
-                  userId: m.userId || "",
-                  text: m.text || "",
-                  time,
-                  isOwn,
-                });
-                msgEls.set(docId, el);
-                frag.appendChild(el);
-              }
-
-              if (ch.type === "modified") {
-                const el = msgEls.get(docId);
-                if (el) {
-                  updateMsgEl(el, {
-                    name: m.name || "",
-                    text: m.text || "",
-                    time,
-                    isOwn,
-                  });
-                }
-              }
-            });
-
-            // Append any newly added nodes in one paint
-            if (frag.childNodes.length) messagesDiv.appendChild(frag);
-
-            if (shouldStick) {
-              messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-          },
-          (err) => {
-            console.error("Messages listener error:", err);
-            if (chatStatus) {
-              chatStatus.textContent = "Chat stream error (check quota/rules).";
-              chatStatus.className = "notice bad";
-            }
-          }
-        )
-    );
-  }
-
-  // ===== Replies panel (per-class) =====
-  function openReplies(parentId, parentText) {
-    const classId = localStorage.getItem("classId");
-    const userId = localStorage.getItem("userId");
-    const name = localStorage.getItem("userName");
-
-    const panel = $("replies-panel");
-    const title = $("replies-title");
-    const list = $("replies-list");
-    const sendReplyBtn = $("sendReplyBtn");
-    const replyInput = $("replyMsgInput");
-
-    if (!panel) return;
-
-    panel.classList.remove("hidden");
-    title.textContent = `Replies to: "${decodeURIComponent(parentText).slice(0, 40)}"`;
-
-    const unsub = messagesCol(classId)
-      .orderBy("timestamp", "asc")
-      .onSnapshot((snap) => {
-        if (!list) return;
-
-        const stick = isNearBottom(list, 120);
-        list.innerHTML = "";
-
-        snap.forEach((doc) => {
-          const m = doc.data() || {};
-          if (m.replyTo !== parentId) return;
-
-          const isOwn = m.userId === userId;
-          const time = fmtTime(m.timestamp);
-
-          list.innerHTML += `
-            <div class="reply-msg ${isOwn ? "own" : ""}" data-id="${doc.id}">
-              <div class="msg-top">
-                <strong>${escapeHtml(m.name || "")}</strong>
-                <span class="msg-time">${escapeHtml(time)}</span>
-              </div>
-              <div class="msg-text">${escapeHtml(m.text || "")}</div>
-              <div class="msg-actions">
-                ${isOwn ? `<button class="delete-btn" data-id="${doc.id}" data-parent="${parentId}">Delete</button>` : ""}
-              </div>
-            </div>
-          `;
-        });
-
-        if (stick) list.scrollTop = list.scrollHeight;
-      });
-
-    if (sendReplyBtn) {
-      sendReplyBtn.onclick = async () => {
-        const text = replyInput.value.trim();
-        if (!text) return;
-
-        const pDoc = await pendingRef(classId, userId).get();
-        const st = pDoc.exists ? (pDoc.data().status || (pDoc.data().approved ? "approved" : "pending")) : "missing";
-        if (st !== "approved") return;
-
-        await messagesCol(classId).add({
-          name,
-          userId,
-          text,
-          replyTo: parentId,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-
-        replyInput.value = "";
-      };
-    }
-
-    panel._unsubReplies = unsub;
-  }
-
-  function closeReplies() {
-    const panel = $("replies-panel");
-    if (!panel) return;
-    panel.classList.add("hidden");
-    if (panel._unsubReplies) {
-      try { panel._unsubReplies(); } catch {}
-      panel._unsubReplies = null;
-    }
-  }
-
-  // ===== Delete =====
-  async function deleteMessage(messageId, parentId) {
-    const classId = localStorage.getItem("classId");
-    await messagesCol(classId).doc(messageId).delete();
-
-    if (parentId === "null") {
-      const snap = await messagesCol(classId).get();
-      const batch = db.batch();
+    // announcements
+    const annUnsub = announcementsCol(classId).orderBy("timestamp","asc").limit(10).onSnapshot((snap) => {
+      const list = $("announcementsList");
+      if (!list) return;
+      list.innerHTML = "";
       snap.forEach((d) => {
-        const m = d.data() || {};
-        if (m.replyTo === messageId) batch.delete(d.ref);
+        const a = d.data() || {};
+        const row = document.createElement("div");
+        row.className="announcement";
+        row.innerHTML = `<div class="a-top"><strong>${escapeHtml(a.title || "Announcement")}</strong><span class="muted">${fmtTime(a.timestamp)}</span></div><div class="a-body">${escapeHtml(a.body || "")}</div>`;
+        list.appendChild(row);
       });
-      await batch.commit();
-    }
-  }
+    });
+    chatUnsubs.push(annUnsub);
 
-  // ===== global click handler =====
-  document.addEventListener("click", (e) => {
-    const t = e.target;
+    // messages
+    const messagesDiv = $("messages");
+    const msgInput = $("msgInput");
+    const sendBtn = $("sendBtn");
 
-    if (t && t.id === "closeReplies") closeReplies();
-
-    if (t && t.classList && (t.classList.contains("reply-btn") || t.classList.contains("view-replies-btn"))) {
-      const parentId = t.dataset.id;
-      const parentText = t.dataset.text || "";
-      openReplies(parentId, parentText);
-    }
-
-    if (t && t.classList && t.classList.contains("delete-btn")) {
-      const id = t.dataset.id;
-      const parent = t.dataset.parent;
-      deleteMessage(id, parent);
-    }
-  });
-});
-    // ===== Reply + Delete system (threaded replies, loaded on-demand) =====
-    // Works without extra collections; replies are normal messages with replyTo = parent message id.
-    // Read impact: only listens to replies when the replies panel is open.
-    let activeReplyTo = null;
-    let repliesUnsub = null;
-
-    function ensureRepliesUI() {
-      let panel = document.getElementById("repliesPanel");
-      if (panel) return panel;
-
-      // Create a lightweight replies drawer if your HTML doesn't have one
-      panel = document.createElement("div");
-      panel.id = "repliesPanel";
-      panel.className = "replies hidden";
-      panel.innerHTML = `
-        <div class="replies-header">
-          <div class="muted"><span id="repliesTitle">Replies</span></div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button id="cancelReplyBtn" type="button" title="Cancel reply">✕</button>
-            <button id="closeRepliesBtn" type="button">Close</button>
-          </div>
-        </div>
-        <div id="repliesList" class="replies-list"></div>
-        <div class="reply-input">
-          <input id="replyInput" type="text" placeholder="Reply…" autocomplete="off" />
-          <button id="sendReplyBtn" type="button">Send</button>
-        </div>
-      `;
-      const chatScreen = document.getElementById("chat-screen") || document.getElementById("screen-chat") || document.body;
-      chatScreen.appendChild(panel);
-      return panel;
-    }
-
-    function closeRepliesPanel() {
-      const panel = document.getElementById("repliesPanel");
-      if (panel) panel.classList.add("hidden");
-      activeReplyTo = null;
-      const title = document.getElementById("repliesTitle");
-      if (title) title.textContent = "Replies";
-      if (repliesUnsub) { try { repliesUnsub(); } catch {} repliesUnsub = null; }
-      const list = document.getElementById("repliesList");
-      if (list) list.innerHTML = "";
-    }
-
-    function openRepliesForMessage(parentId, parentName, parentText) {
-      const panel = ensureRepliesUI();
-      panel.classList.remove("hidden");
-      activeReplyTo = { id: parentId, name: parentName || "User", text: parentText || "" };
-
-      const title = document.getElementById("repliesTitle");
-      if (title) title.textContent = `Replying to ${activeReplyTo.name}`;
-
-      // Unsub previous replies listener
-      if (repliesUnsub) { try { repliesUnsub(); } catch {} repliesUnsub = null; }
-
-      const list = document.getElementById("repliesList");
-      if (list) list.innerHTML = `<div class="muted" style="padding:10px">Loading replies…</div>`;
-
-      // Listen to replies only while panel is open (optimized)
-      repliesUnsub = messagesCol(classId)
-        .where("replyTo", "==", parentId)
-        .orderBy("timestamp", "asc")
-        .limitToLast(75)
-        .onSnapshot((snap) => {
-          if (!list) return;
-          list.innerHTML = "";
-          if (snap.empty) {
-            list.innerHTML = `<div class="muted" style="padding:10px">No replies yet.</div>`;
-            return;
-          }
-          snap.forEach((d) => {
-            const m = d.data() || {};
-            const row = document.createElement("div");
-            row.className = "reply-row";
-            row.innerHTML = `<div class="reply-top"><strong>${escapeHtml(m.name || "User")}</strong> <span class="muted">${fmtTime(m.timestamp)}</span></div>`;
-            const body = document.createElement("div");
-            body.className = "reply-text";
-            body.textContent = (m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)") ? "(deleted)" : (m.text || "");
-            row.appendChild(body);
-
-            // Delete own reply
-            if (m.userId && m.userId === userId && !m.deleted && String(m.text||"").trim().toLowerCase()!=="(deleted)") {
-              const del = document.createElement("button");
-              del.type = "button";
-              del.className = "msg-btn msg-del";
-              del.textContent = "Delete";
-              del.onclick = () => deleteMyMessage(d.ref, { isReply: true });
-              row.appendChild(del);
-            }
-            list.appendChild(row);
-          });
-          list.scrollTop = list.scrollHeight;
-        });
-
-      chatUnsubs.push(repliesUnsub);
-
-      // Wire close/cancel buttons
-      const closeBtn = document.getElementById("closeRepliesBtn");
-      if (closeBtn) closeBtn.onclick = closeRepliesPanel;
-      const cancelBtn = document.getElementById("cancelReplyBtn");
-      if (cancelBtn) cancelBtn.onclick = closeRepliesPanel;
-    }
-
-    async function deleteMyMessage(docRef, { isReply } = {}) {
-      if (!docRef) return;
-      if (!confirm("Delete this message?")) return;
-
-      // Soft delete first (keeps thread stable)
-      try {
-        await docRef.set({
-          deleted: true,
-          text: "(deleted)",
-          deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        if (window.ST_TOAST) window.ST_TOAST("Deleted.");
-        return;
-      } catch {}
-
-      // Hard delete fallback
-      try {
-        await docRef.delete();
-        if (window.ST_TOAST) window.ST_TOAST("Deleted.");
-      } catch {
-        if (window.ST_TOAST) window.ST_TOAST("Delete blocked by rules.");
-      }
-    }
-
-    // Event delegation for Reply/Delete buttons on messages
-    if (messagesDiv) {
-      messagesDiv.addEventListener("click", async (e) => {
-        const t = e.target;
-        if (!(t instanceof Element)) return;
-        const btn = t.closest(".msg-btn");
-        if (!btn) return;
-
-        const msgEl = t.closest(".msg");
-        if (!msgEl) return;
-        const mid = msgEl.dataset.id || "";
-        const muid = msgEl.dataset.userid || "";
-        if (!mid) return;
-
-        if (btn.dataset.action === "reply") {
-          const nameEl = msgEl.querySelector(".msg-top strong");
-          const bodyEl = msgEl.querySelector(".msg-text");
-          openRepliesForMessage(mid, nameEl ? nameEl.textContent : "User", bodyEl ? bodyEl.textContent : "");
-        } else if (btn.dataset.action === "delete") {
-          if (muid !== userId) return;
-          await deleteMyMessage(messagesCol(classId).doc(mid));
-        }
+    // reply UI
+    ensureRepliesUI();
+    // wire reply send each chat open
+    const replyInp = document.getElementById("replyInput");
+    const replyBtn = document.getElementById("sendReplyBtn");
+    if (replyInp && replyBtn) {
+      replyInp.addEventListener("keydown", (e) => {
+        if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); replyBtn.click(); }
       });
-    }
-
-    // Wire reply send
-    function wireReplySend() {
-      const inp = document.getElementById("replyInput");
-      const btn = document.getElementById("sendReplyBtn");
-      if (!inp || !btn) return;
-
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          btn.click();
-        }
-      });
-
-      btn.onclick = async () => {
-        const text = (inp.value || "").trim();
+      replyBtn.onclick = async () => {
+        const text = (replyInp.value || "").trim();
         if (!text || !activeReplyTo) return;
-
-        if (isChatLocked()) {
-          flashStatus("Chat is locked by admin.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        btn.disabled = true;
+        if (isChatLocked()) { flashStatus("Chat is locked by admin.","warn"); playSound("deny"); return; }
+        if (window.__st_isBanned) { flashStatus("You are banned.","bad"); playSound("deny"); return; }
+        replyBtn.disabled=true;
         try {
           await messagesCol(classId).add({
             userId,
@@ -1287,19 +956,188 @@ document.addEventListener("DOMContentLoaded", () => {
             replyTo: activeReplyTo.id,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           });
-          inp.value = "";
+          replyInp.value="";
           playSound("send");
         } catch {
-          flashStatus("Failed to send reply.", "bad");
+          flashStatus("Failed to send reply.","bad");
         } finally {
-          btn.disabled = false;
+          replyBtn.disabled=false;
         }
       };
     }
 
-    // Ensure replies UI exists (but stays hidden)
-    ensureRepliesUI();
-    wireReplySend();
+    // Enter to send (Shift+Enter newline)
+    if (msgInput && sendBtn) {
+      msgInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendBtn.click();
+        }
+      });
+      msgInput.oninput = () => {
+        if (typingDebounce) clearTimeout(typingDebounce);
+        typingDebounce = setTimeout(() => setTyping(classId, userId, true), 180);
+        if (typingTimeout) clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => setTyping(classId, userId, false), 1400);
+      };
+    }
 
-    // Close replies on logout / screen changes via cleanup
+    // typing listener
+    const typUnsub = typingDoc(classId).onSnapshot((doc) => {
+      const data = (doc && doc.exists) ? (doc.data() || {}) : {};
+      renderTypingIndicator(data, userId);
+    });
+    chatUnsubs.push(typUnsub);
 
+    // message render
+    const msgUnsub = messagesCol(classId).orderBy("timestamp","asc").limitToLast(75).onSnapshot((snap) => {
+      if (!messagesDiv) return;
+      const stick = (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight) < 160;
+      // if first load, rebuild
+      if (!messagesDiv.dataset.inited) {
+        messagesDiv.innerHTML="";
+        snap.forEach((d) => {
+          const m = d.data() || {};
+          const el = buildMsgEl({ id:d.id, ...m }, userId);
+          el.id = `msg_${d.id}`;
+          messagesDiv.appendChild(el);
+        });
+        messagesDiv.dataset.inited="1";
+        if (stick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        return;
+      }
+
+      snap.docChanges().forEach((ch) => {
+        const d = ch.doc;
+        const m = d.data() || {};
+        const id = `msg_${d.id}`;
+        const existing = document.getElementById(id);
+
+        if (ch.type==="added") {
+          const el = buildMsgEl({ id:d.id, ...m }, userId);
+          el.id = id;
+          messagesDiv.appendChild(el);
+          if (stick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+          if (m.userId && m.userId !== userId) {
+            maybeNotify(selectedClassName || classId, m.name || "Someone", String(m.text||""));
+            if (document.hidden) playSound("receive");
+          }
+        } else if (ch.type==="modified") {
+          if (existing) {
+            const body = existing.querySelector(".msg-text");
+            const isDeleted = !!m.deleted || (String(m.text||"").trim().toLowerCase()==="(deleted)");
+            if (body) {
+              body.textContent = isDeleted ? "(deleted)" : (m.text || "");
+              body.classList.toggle("deleted", isDeleted);
+            }
+          }
+        } else if (ch.type==="removed") {
+          if (existing) existing.remove();
+        }
+      });
+    });
+    chatUnsubs.push(msgUnsub);
+
+    // Message actions (reply/delete)
+    if (messagesDiv) {
+      messagesDiv.addEventListener("click", (e) => {
+        const t = e.target;
+        if (!(t instanceof Element)) return;
+        const btn = t.closest(".msg-btn");
+        if (!btn) return;
+        const msgEl = t.closest(".msg");
+        if (!msgEl) return;
+        const mid = msgEl.dataset.id || "";
+        const muid = msgEl.dataset.userid || "";
+        if (!mid) return;
+
+        if (btn.dataset.action==="reply") {
+          const nameEl = msgEl.querySelector(".msg-top strong");
+          openRepliesForMessage(classId, userId, mid, nameEl ? nameEl.textContent : "User");
+        } else if (btn.dataset.action==="delete") {
+          if (muid !== userId) return;
+          deleteMyMessage(messagesCol(classId).doc(mid));
+        }
+      });
+    }
+
+    // Send message (spam filter + no per-send reads)
+    if (sendBtn && msgInput) {
+      sendBtn.onclick = async () => {
+        let text = String(msgInput.value || "").trim();
+        if (!text) return;
+        const now = Date.now();
+
+        text = text.replace(/\s{3,}/g, "  ");
+        if (text.length > SPAM_MAX_LEN) { flashStatus(`Message too long (max ${SPAM_MAX_LEN}).`,"warn"); playSound("deny"); return; }
+        if (now - lastSendAt < SPAM_MIN_INTERVAL_MS) { flashStatus("Slow down.","warn"); playSound("deny"); return; }
+
+        // repeats
+        const cutoff = now - SPAM_REPEAT_WINDOW_MS;
+        while (recentTexts.length && recentTexts[0].at < cutoff) recentTexts.shift();
+        const repeats = recentTexts.filter(r => r.t === text).length;
+        if (repeats >= SPAM_MAX_REPEAT || (lastSendText === text && now - lastSendAt < SPAM_REPEAT_WINDOW_MS)) {
+          flashStatus("Duplicate spam blocked.","warn"); playSound("deny"); return;
+        }
+
+        if (isChatLocked()) { flashStatus("Chat is locked by admin.","warn"); playSound("deny"); return; }
+        if (window.__st_isBanned) { flashStatus("You are banned.","bad"); playSound("deny"); return; }
+
+        sendBtn.disabled=true;
+        try {
+          await messagesCol(classId).add({
+            userId,
+            name,
+            text,
+            replyTo: null,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          msgInput.value="";
+          setTyping(classId, userId, false);
+          playSound("send");
+          lastSendAt = now;
+          lastSendText = text;
+          recentTexts.push({ t:text, at:now });
+        } catch {
+          flashStatus("Failed to send.","bad");
+        } finally {
+          sendBtn.disabled=false;
+        }
+      };
+    }
+
+    // Ask notifications permission once after rules accepted
+    requestNotificationPermissionOnce();
+  }
+
+  // reset button
+  const resetBtn = $("resetBtn");
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      clearChatListeners();
+      clearSession();
+      selectedClassId=null; selectedClassName=null;
+      showScreen("class");
+      loadClasses();
+    };
+  }
+
+  // restore session
+  const savedClassId = getLS("classId");
+  const savedUserId = getLS("userId");
+  const savedName = getLS("userName");
+  const savedClassName = getLS("className");
+
+  if (savedClassId && savedUserId && savedName) {
+    selectedClassId = savedClassId;
+    selectedClassName = savedClassName || savedClassId;
+    showScreen("wait");
+    const w = $("waitStatus");
+    if (w) w.textContent = "Reconnecting…";
+    watchStatus(savedClassId, savedUserId, savedName);
+  } else {
+    showScreen("class");
+    loadClasses();
+  }
+});
