@@ -1,6 +1,49 @@
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   // ===== helpers =====
   const $ = (id) => document.getElementById(id);
+  // ===== boot safety: wait for Firebase globals (prevents "no classes" due to script ordering) =====
+  async function waitForFirebaseReady(timeoutMs = 7000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (window.firebase && (window.db || (window.firebase.firestore && window.firebase.apps && window.firebase.apps.length))) {
+        // If db wasn't assigned but firebase is ready, build it (keeps compatibility)
+        if (!window.db && window.firebase.firestore) {
+          try { window.db = window.firebase.firestore(); } catch {}
+        }
+        return true;
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
+    return false;
+  }
+
+  function bootFail(msg) {
+    console.error(msg);
+    const root = document.getElementById("root") || document.body;
+    if (!root) return;
+    const box = document.createElement("div");
+    box.style.position = "fixed";
+    box.style.inset = "0";
+    box.style.display = "grid";
+    box.style.placeItems = "center";
+    box.style.background = "rgba(0,0,0,.75)";
+    box.style.zIndex = "999999";
+    box.style.color = "#fff";
+    box.style.fontFamily = "system-ui, sans-serif";
+    box.innerHTML = `
+      <div style="max-width:720px;width:92vw;padding:16px 18px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(14,14,14,.80);backdrop-filter:blur(10px)">
+        <div style="font-weight:800;letter-spacing:.02em;font-size:18px">SecureText couldn’t start</div>
+        <div style="opacity:.85;margin-top:6px;line-height:1.4">${msg}</div>
+        <div style="opacity:.7;margin-top:10px;font-size:13px">Fix: make sure Firebase v8 scripts load BEFORE firebase.js and app.js.</div>
+      </div>
+    `;
+    document.body.appendChild(box);
+  }
+
+  const __fb_ok = await waitForFirebaseReady();
+  if (!__fb_ok) { bootFail("Firebase did not initialize (window.firebase/db missing). Check index.html script order and CDN URLs."); return; }
+
+
 
   // Screens used by THIS app.js
   const screens = {
@@ -356,6 +399,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ===== UI events =====
+  // Admin Path (always clickable; visibility controlled elsewhere)
+  const adminPathBtn = $("adminPathBtn");
+  if (adminPathBtn) adminPathBtn.addEventListener("click", () => { window.location.href = "admin.html"; });
+
   const pinBackBtn = $("pinBackBtn");
   if (pinBackBtn) {
     pinBackBtn.onclick = () => {
@@ -1080,6 +1127,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
 (function () {
   const $ = (id) => document.getElementById(id);
+  // ===== boot safety: wait for Firebase globals (prevents "no classes" due to script ordering) =====
+  async function waitForFirebaseReady(timeoutMs = 7000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (window.firebase && (window.db || (window.firebase.firestore && window.firebase.apps && window.firebase.apps.length))) {
+        // If db wasn't assigned but firebase is ready, build it (keeps compatibility)
+        if (!window.db && window.firebase.firestore) {
+          try { window.db = window.firebase.firestore(); } catch {}
+        }
+        return true;
+      }
+      await new Promise(r => setTimeout(r, 60));
+    }
+    return false;
+  }
+
+  function bootFail(msg) {
+    console.error(msg);
+    const root = document.getElementById("root") || document.body;
+    if (!root) return;
+    const box = document.createElement("div");
+    box.style.position = "fixed";
+    box.style.inset = "0";
+    box.style.display = "grid";
+    box.style.placeItems = "center";
+    box.style.background = "rgba(0,0,0,.75)";
+    box.style.zIndex = "999999";
+    box.style.color = "#fff";
+    box.style.fontFamily = "system-ui, sans-serif";
+    box.innerHTML = `
+      <div style="max-width:720px;width:92vw;padding:16px 18px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(14,14,14,.80);backdrop-filter:blur(10px)">
+        <div style="font-weight:800;letter-spacing:.02em;font-size:18px">SecureText couldn’t start</div>
+        <div style="opacity:.85;margin-top:6px;line-height:1.4">${msg}</div>
+        <div style="opacity:.7;margin-top:10px;font-size:13px">Fix: make sure Firebase v8 scripts load BEFORE firebase.js and app.js.</div>
+      </div>
+    `;
+    document.body.appendChild(box);
+  }
+
   const prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // ---- Settings store (adds new toggles; keeps existing theme/sound if present) ----
