@@ -16,8 +16,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function messagesCol(classId) {
     return classDocRef(classId).collection("messages");
   }
-  function announcementsCol(classId) { return classDocRef(classId).collection("announcements"); }
-  function commandsDoc(classId) { return classDocRef(classId).collection("meta").doc("commands"); }
+  function announcementsCol(classId) {
+    return classDocRef(classId).collection("announcements");
+  }
 
   // ===== login =====
   $("loginBtn").onclick = async () => {
@@ -83,36 +84,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     $("admin-screen").style.display = "block";
     $("classTitle").textContent = `Managing: ${className} (${classId})`;
-
-    // Reset Commands button (fixes users getting kicked by old nonces)
-    const resetBtn = $("resetCommandsBtn");
-    const resetStatus = $("resetStatus");
-    const setResetStatus = (t) => { if (resetStatus) resetStatus.textContent = t || ""; };
-
-    if (resetBtn) {
-      resetBtn.onclick = async () => {
-        if (!currentClassId) return;
-        try {
-          setResetStatus("Resetting…");
-          await commandsDoc(currentClassId).set({
-            logoutNonce: 0,
-            refreshNonce: 0,
-            rulesNonce: 0,
-            locked: false,
-            lockMessage: "",
-            forceLogoutAt: firebase.firestore.FieldValue.delete(),
-            forceRulesAt: firebase.firestore.FieldValue.delete(),
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            by: (firebase.auth().currentUser && firebase.auth().currentUser.email) || "admin",
-          }, { merge: true });
-          setResetStatus("✅ Commands reset.");
-        } catch (e) {
-          console.error(e);
-          setResetStatus("❌ Reset failed (permissions).");
-        }
-      };
-    }
-
 
     wirePending();
     wireBanned();
