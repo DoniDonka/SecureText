@@ -817,6 +817,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // send message (MAIN)
     if (sendBtn && msgInput) {
+
+      // ===== Spam filter (client-side) =====
+      // Keeps quota low (no extra reads/writes) and stops flood.
+      let lastSendAt = 0;
+      let lastSendText = "";
+      const recentTexts = []; // { t, at }
+      const SPAM_MIN_INTERVAL_MS = 1100;   // 1.1s cooldown
+      const SPAM_REPEAT_WINDOW_MS = 12000; // 12s window
+      const SPAM_MAX_REPEAT = 2;           // allow 2 repeats then block
+      const SPAM_MAX_LEN = 350;            // max length
       sendBtn.onclick = async () => {
         let text = msgInput.value;
         if (text == null) return;
