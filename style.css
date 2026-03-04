@@ -222,3 +222,61 @@ button:disabled{opacity:.55; cursor:not-allowed;}
 
 
 body.preset-neon button.primary{background:rgba(160,90,255,.16);border-color:rgba(160,90,255,.24)}body.preset-emerald button.primary{background:rgba(60,255,160,.14);border-color:rgba(60,255,160,.22)}body.preset-mono button.primary{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.16)}
+
+/* ===== Theme visuals (fix "only one theme") ===== */
+#chat-screen.night{
+  background: rgba(0,0,0,.18);
+}
+#chat-screen.day{
+  background: rgba(255,255,255,.08);
+}
+#chat-screen.day .messages{
+  background: rgba(255,255,255,.10);
+}
+#chat-screen.day .muted{ color: rgba(255,255,255,.78); }
+#chat-screen.day .card{ background: rgba(255,255,255,.08); }
+
+body.theme-day{
+  background:
+    radial-gradient(1200px 700px at 12% 10%, rgba(90,160,255,.18), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(255,80,160,.10), transparent 55%),
+    radial-gradient(900px 700px at 50% 92%, rgba(80,255,180,.10), transparent 60%),
+    linear-gradient(180deg, #0a0f18, #070b12);
+}
+body.theme-night{
+  background:
+    radial-gradient(1200px 700px at 12% 10%, rgba(80,140,255,.14), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(255,0,130,.10), transparent 55%),
+    radial-gradient(900px 700px at 50% 92%, rgba(60,255,160,.08), transparent 60%),
+    linear-gradient(180deg, #070a0f, #05070b);
+}
+
+/* ===== Presets (make them obvious) ===== */
+body.preset-neon.theme-night{
+  background:
+    radial-gradient(1200px 700px at 18% 12%, rgba(160,90,255,.22), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(80,140,255,.12), transparent 55%),
+    radial-gradient(900px 700px at 50% 92%, rgba(255,0,180,.10), transparent 60%),
+    linear-gradient(180deg, #070812, #05060b);
+}
+body.preset-emerald.theme-night{
+  background:
+    radial-gradient(1200px 700px at 18% 12%, rgba(60,255,160,.18), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(80,140,255,.10), transparent 55%),
+    radial-gradient(900px 700px at 50% 92%, rgba(60,255,160,.10), transparent 60%),
+    linear-gradient(180deg, #070a0f, #05070b);
+}
+body.preset-mono.theme-night{
+  background:
+    radial-gradient(1200px 700px at 18% 12%, rgba(255,255,255,.10), transparent 60%),
+    radial-gradient(900px 650px at 88% 18%, rgba(255,255,255,.06), transparent 55%),
+    radial-gradient(900px 700px at 50% 92%, rgba(255,255,255,.06), transparent 60%),
+    linear-gradient(180deg, #080b10, #06080d);
+}
+
+/* Button feedback (fix "no reaction") */
+button, .pill{
+  transition: transform 120ms ease, filter 120ms ease, background 180ms ease, border-color 180ms ease;
+}
+button:hover, .pill:hover{ filter: brightness(1.08); }
+button:active, .pill:active{ transform: translateY(1px) scale(0.99); }
