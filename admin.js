@@ -358,3 +358,28 @@ document.addEventListener("DOMContentLoaded", () => {
     liveUnsubs.push(unsub);
   }
 });
+
+
+// ===== Hotfix: wire preset + data saver buttons safely (no crashes) =====
+function wireExtraControlsHotfix($, commandsDoc, currentClassId, setStatus) {
+  const ref = commandsDoc(currentClassId);
+  const safeSet = async (patch, okMsg) => {
+    setStatus(okMsg ? "Working…" : "Working…", "warn");
+    try { await ref.set(patch, { merge: true }); setStatus(okMsg || "✅ Done.", "ok"); }
+    catch (e) { console.error(e); setStatus("Failed.", "bad"); }
+  };
+
+  const neon = $("presetNeonBtn");
+  if (neon) neon.onclick = () => safeSet({ preset: "neon" }, "✅ Preset: neon.");
+  const em = $("presetEmeraldBtn");
+  if (em) em.onclick = () => safeSet({ preset: "emerald" }, "✅ Preset: emerald.");
+  const mono = $("presetMonoBtn");
+  if (mono) mono.onclick = () => safeSet({ preset: "mono" }, "✅ Preset: mono.");
+  const clr = $("presetClearBtn");
+  if (clr) clr.onclick = () => safeSet({ preset: firebase.firestore.FieldValue.delete() }, "✅ Preset cleared.");
+
+  const on = $("dataSaverOnBtn");
+  if (on) on.onclick = () => safeSet({ dataSaver: true }, "✅ Data Saver ON.");
+  const off = $("dataSaverOffBtn");
+  if (off) off.onclick = () => safeSet({ dataSaver: false }, "✅ Data Saver OFF.");
+}

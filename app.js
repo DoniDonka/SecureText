@@ -1,1285 +1,589 @@
+/* SecureText V6 Hotfix — stable, quota-safe, spam-protected (Firebase v8) */
 document.addEventListener("DOMContentLoaded", () => {
-  // ===== helpers =====
   const $ = (id) => document.getElementById(id);
 
-  // Screens used by THIS app.js
-  const screens = {
-    class: $("screen-class"),
-    pin: $("screen-pin"),
-    name: $("screen-name"),
-    wait: $("screen-wait"),
-    chat: $("screen-chat"),
-  };
-
-  // Extra legacy full-screen nodes that might still exist (from older versions)
-  function hardHideEl(id) {
-    const el = $(id);
-    if (el) el.style.display = "none";
-  }
-  function hardShowEl(id) {
-    const el = $(id);
-    if (el) el.style.display = "";
+  const screens = ["class","pin","name","wait","chat"];
+  function showScreen(k){
+    for (const s of screens){ const el=$("screen-"+s); if(el) el.classList.toggle("active", s===k); }
   }
 
-  function showScreen(key) {
-    Object.entries(screens).forEach(([k, el]) => {
-      if (!el) return;
-      el.classList.toggle("active", k === key);
-    });
-
-    // Hide old nodes if present (prevents “double UIs” if you ever used them)
-    if (key === "class") {
-      hardHideEl("name-screen");
-      hardHideEl("waiting-screen");
-      hardHideEl("chat-screen-old");
-      hardHideEl("name-screen-old");
-    }
+  function escapeHtml(str){
+    return String(str||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+  function fmtTime(ts){
+    try { return ts?.toDate ? ts.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : ""; } catch { return ""; }
   }
 
-  function escapeHtml(str) {
-    return String(str || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  // flash
+  function stFlash(){
+    const el=$("stFlash"); if(!el) return;
+    el.classList.add("on"); setTimeout(()=>el.classList.remove("on"), 220);
   }
 
-  function setLS(obj) {
-    Object.entries(obj).forEach(([k, v]) => localStorage.setItem(k, String(v)));
+  // local settings
+  const SETTINGS_KEY="st_settings_v6";
+  const DEFAULTS={theme:"night", sound:true, here:true};
+  function getSettings(){ try{ return {...DEFAULTS, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}")||{})}; }catch{return {...DEFAULTS};} }
+  function setSettings(s){ try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch{} }
+  let settings=getSettings();
+
+  function applyTheme(mode){
+    const cs=$("chat-screen"); if(cs){ cs.classList.remove("day","night"); cs.classList.add(mode==="day"?"day":"night"); }
+    const t=$("themeToggle"); if(t) t.textContent = mode==="day"?"☀️":"🌙";
   }
-  function clearLS() {
-    localStorage.removeItem("classId");
-    localStorage.removeItem("className");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("userName");
-    // do NOT clear rules acceptance here unless you want it to re-ask next time
+  function applyPreset(p){
+    document.body.classList.remove("preset-neon","preset-emerald","preset-mono");
+    if(p==="neon") document.body.classList.add("preset-neon");
+    if(p==="emerald") document.body.classList.add("preset-emerald");
+    if(p==="mono") document.body.classList.add("preset-mono");
   }
 
-  // Firestore refs (v8 compat)
-  function classDocRef(classId) {
-    return db.collection("classes").doc(classId);
-  }
-  function pendingRef(classId, userId) {
-    return classDocRef(classId).collection("pendingUsers").doc(userId);
-  }
-  function bannedRef(classId, userId) {
-    return classDocRef(classId).collection("bannedUsers").doc(userId);
-  }
-  function messagesCol(classId) {
-    return classDocRef(classId).collection("messages");
-  }
-  function announcementsCol(classId) {
-    return classDocRef(classId).collection("announcements");
-  }
-  function typingDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("typing");
-  }
-
-  // Rules acceptance per (classId + userId)
-  function rulesKey(classId, userId) {
-    return `rulesAccepted_${classId}_${userId}`;
-  }
-  function hasAcceptedRules(classId, userId) {
-    return localStorage.getItem(rulesKey(classId, userId)) === "true";
-  }
-  function setAcceptedRules(classId, userId) {
-    localStorage.setItem(rulesKey(classId, userId), "true");
-  }
-
-  // ===== Notifications (permission + smart notify) =====
-  const NOTIF_ASK_KEY = "st_notif_asked";
-  function requestNotificationPermissionOnce() {
-    try {
-      if (!("Notification" in window)) return;
-      if (localStorage.getItem(NOTIF_ASK_KEY) === "1") return;
-      if (Notification.permission === "default") {
-        localStorage.setItem(NOTIF_ASK_KEY, "1");
-        Notification.requestPermission().catch(() => { });
-      } else {
-        localStorage.setItem(NOTIF_ASK_KEY, "1");
-      }
-    } catch { }
-  }
-
-  function maybeNotifyNewMessage({ className, from, text }) {
-    try {
-      if (!("Notification" in window)) return;
-      if (Notification.permission !== "granted") return;
-      if (!document.hidden) return; // A: only when tab is not focused
-
-      const body = text.length > 140 ? text.slice(0, 140) + "…" : text;
-      new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
-    } catch { }
-  }
-
-  // ===== Settings: Theme + Sound =====
-  const SETTINGS_KEY = "st_settings_v2";
-  const DEFAULT_SETTINGS = { theme: "night", sound: true };
-
-  function getSettingsState() {
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { ...DEFAULT_SETTINGS };
-      const parsed = JSON.parse(raw);
-      return {
-        theme: parsed.theme === "day" ? "day" : "night",
-        sound: parsed.sound !== false,
-      };
-    } catch {
-      return { ...DEFAULT_SETTINGS };
-    }
-  }
-
-  function setSettingsState(next) {
-    try {
-      localStorage.setItem(
-        SETTINGS_KEY,
-        JSON.stringify({
-          theme: next.theme === "day" ? "day" : "night",
-          sound: !!next.sound,
-        })
-      );
-    } catch { }
-  }
-
-  function applyTheme(mode) {
-    const screen = $("chat-screen");
-    const mode2 = mode === "day" ? "day" : "night";
-    if (screen) {
-      screen.classList.remove("day", "night");
-      screen.classList.add(mode2);
-    }
-  }
-
-  // ===== Sounds (no external files; tiny synth) =====
-  let soundEnabled = getSettingsState().sound;
-  function setSoundEnabled(v) {
-    soundEnabled = !!v;
-  }
-  function playSound(type) {
-    if (!soundEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g);
-      g.connect(ctx.destination);
-
-      const now = ctx.currentTime;
-      let freq = 440;
-      let dur = 0.07;
-
-      if (type === "send") {
-        freq = 620;
-        dur = 0.06;
-      }
-      if (type === "receive") {
-        freq = 520;
-        dur = 0.07;
-      }
-      if (type === "approve") {
-        freq = 740;
-        dur = 0.1;
-      }
-      if (type === "deny") {
-        freq = 220;
-        dur = 0.09;
-      }
-
+  // sounds (simple)
+  function playSound(type){
+    if(!settings.sound) return;
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const o=ctx.createOscillator(); const g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      const now=ctx.currentTime;
+      const freq = type==="deny"?220 : type==="approve"?740 : type==="send"?620 : 520;
+      const dur = type==="approve"?0.10 : 0.07;
       o.frequency.setValueAtTime(freq, now);
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-
-      o.start(now);
-      o.stop(now + dur + 0.02);
-      o.onended = () => {
-        try {
-          ctx.close();
-        } catch { }
-      };
-    } catch { }
+      g.gain.exponentialRampToValueAtTime(0.08, now+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      o.start(now); o.stop(now+dur+0.02);
+      o.onended=()=>{try{ctx.close();}catch{}};
+    }catch{}
   }
 
-  // ===== Settings modal UI =====
-  function openSettingsModal({ theme, sound, onChange }) {
-    const old = document.getElementById("stSettingsOverlay");
-    if (old) old.remove();
-
-    const overlay = document.createElement("div");
-    overlay.id = "stSettingsOverlay";
-    overlay.className = "st-overlay";
-    overlay.innerHTML = `
-      <div class="st-modal">
-        <div class="st-modal-top">
-          <div class="st-modal-title">Settings</div>
-          <button id="stSettingsClose" class="st-icon-btn" type="button">✕</button>
-        </div>
-
-        <div class="st-modal-body">
-          <div class="st-setting-row">
-            <div>
-              <div class="st-setting-name">Theme</div>
-              <div class="st-setting-desc muted">Day / Night mode</div>
-            </div>
-            <button id="stThemeBtn" class="st-pill-btn" type="button"></button>
-          </div>
-
-          <div class="st-setting-row">
-            <div>
-              <div class="st-setting-name">Sounds</div>
-              <div class="st-setting-desc muted">Send / receive effects</div>
-            </div>
-            <button id="stSoundBtn" class="st-pill-btn" type="button"></button>
-          </div>
-
-          <div class="st-divider"></div>
-          <div class="muted" style="font-size:.85rem;line-height:1.25rem">
-            Notifications are only shown when this tab isn’t focused.
-          </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-
-    const close = () => {
-      try {
-        overlay.remove();
-      } catch { }
-    };
-
-    const themeBtn = overlay.querySelector("#stThemeBtn");
-    const soundBtn = overlay.querySelector("#stSoundBtn");
-    const closeBtn = overlay.querySelector("#stSettingsClose");
-
-    function render() {
-      themeBtn.textContent = theme === "day" ? "☀️ Day" : "🌙 Night";
-      soundBtn.textContent = sound ? "🔊 On" : "🔇 Off";
-    }
-    render();
-
-    themeBtn.onclick = () => {
-      theme = theme === "day" ? "night" : "day";
-      render();
-      onChange({ theme, sound });
-      playSound("send");
-    };
-    soundBtn.onclick = () => {
-      sound = !sound;
-      render();
-      onChange({ theme, sound });
-      playSound(sound ? "send" : "deny");
-    };
-
-    if (closeBtn) closeBtn.onclick = close;
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
-    });
-    window.addEventListener("keydown", function esc(e) {
-      if (e.key === "Escape") {
-        window.removeEventListener("keydown", esc);
-        close();
-      }
-    });
+  // notifications
+  const NOTIF_ASK_KEY="st_notif_asked";
+  function requestNotifOnce(){
+    try{
+      if(!("Notification" in window)) return;
+      if(localStorage.getItem(NOTIF_ASK_KEY)==="1") return;
+      localStorage.setItem(NOTIF_ASK_KEY,"1");
+      if(Notification.permission==="default") Notification.requestPermission().catch(()=>{});
+    }catch{}
+  }
+  function maybeNotify(className, from, text){
+    const t=String(text||"");
+    const isHere=t.toLowerCase().includes("@here");
+    if(isHere && settings.here){ stFlash(); playSound("approve"); }
+    if(!("Notification" in window)) return;
+    if(Notification.permission!=="granted") return;
+    if(!document.hidden && !isHere) return;
+    const body=(t.length>140?t.slice(0,140)+"…":t);
+    new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
   }
 
-  // ===== Enhanced styles for new UI bits (typing dots, modal, lock overlay) =====
-  let enhancedStylesInjected = false;
-  function ensureEnhancedStyles() {
-    if (enhancedStylesInjected) return;
-    enhancedStylesInjected = true;
+  // firestore helpers
+  const classDoc=(cid)=>db.collection("classes").doc(cid);
+  const pendingDoc=(cid,uid)=>classDoc(cid).collection("pendingUsers").doc(uid);
+  const bannedDoc=(cid,uid)=>classDoc(cid).collection("bannedUsers").doc(uid);
+  const messagesCol=(cid)=>classDoc(cid).collection("messages");
+  const annCol=(cid)=>classDoc(cid).collection("announcements");
+  const typingDoc=(cid)=>classDoc(cid).collection("meta").doc("typing");
+  const presenceDoc=(cid)=>classDoc(cid).collection("meta").doc("presence");
+  const commandsDoc=(cid)=>classDoc(cid).collection("meta").doc("commands");
 
-    const css = `
-      .online-badge{margin-top:6px;display:inline-block;font-size:.85rem;opacity:.85}
-      .typing-bubble{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.10);padding:6px 10px;border-radius:999px}
-      .typing-bubble .dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.85);display:inline-block;animation:stDot 1s infinite}
-      .typing-bubble .dot:nth-child(2){animation-delay:.12s}
-      .typing-bubble .dot:nth-child(3){animation-delay:.24s}
-      @keyframes stDot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-4px);opacity:1}}
-      .st-overlay{position:fixed;inset:0;z-index:999999;display:grid;place-items:center;background:rgba(0,0,0,.70);backdrop-filter:blur(10px);padding:16px;animation:stFade .12s ease}
-      @keyframes stFade{from{opacity:0}to{opacity:1}}
-      .st-modal{width:min(520px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);overflow:hidden}
-      .st-modal-top{display:flex;justify-content:space-between;align-items:center;padding:14px 14px;border-bottom:1px solid rgba(255,255,255,.10)}
-      .st-modal-title{font-weight:700;letter-spacing:.04em}
-      .st-icon-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;border-radius:10px;padding:6px 10px;cursor:pointer}
-      .st-modal-body{padding:14px 14px}
-      .st-setting-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0}
-      .st-setting-name{font-weight:700}
-      .st-setting-desc{font-size:.85rem}
-      .st-pill-btn{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
-      .st-divider{height:1px;background:rgba(255,255,255,.10);margin:10px 0}
-      .st-lock{position:fixed;inset:0;z-index:999998;display:none;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);padding:16px}
-      .st-lock.active{display:grid;animation:stFade .12s ease}
-      .st-lock-card{width:min(620px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);padding:18px}
-      .st-lock-title{font-weight:800;letter-spacing:.06em}
-      .st-lock-msg{margin-top:8px;opacity:.85;line-height:1.35rem}
-      .st-statusflash{animation:stStatus .18s ease}
-      @keyframes stStatus{from{transform:translateY(-3px);opacity:.2}to{transform:translateY(0);opacity:1}}
-    `;
+  // state
+  let selectedClassId=null, selectedClassName=null;
+  let userId=null, userName=null;
+  let chatUnsubs=[];
+  function clearChat(){ chatUnsubs.forEach(u=>{try{u();}catch{}}); chatUnsubs=[]; stopPresence(); }
 
-    const tag = document.createElement("style");
-    tag.textContent = css;
-    document.head.appendChild(tag);
-  }
-
-  // ===== Lock overlay =====
-  let chatLocked = false;
-  function isChatLocked() {
-    return !!chatLocked;
-  }
-  function setChatLocked(val, msg) {
-    chatLocked = !!val;
-    ensureEnhancedStyles();
-
-    let lock = document.getElementById("stLockOverlay");
-    if (!lock) {
-      lock = document.createElement("div");
-      lock.id = "stLockOverlay";
-      lock.className = "st-lock";
-      lock.innerHTML = `
-        <div class="st-lock-card">
-          <div class="st-lock-title">CHAT LOCKED</div>
-          <div id="stLockMsg" class="st-lock-msg">Chat is temporarily locked by admin.</div>
-          <div class="muted" style="margin-top:10px;font-size:.85rem">You’ll be able to chat again automatically when it unlocks.</div>
-        </div>
-      `;
-      document.body.appendChild(lock);
-    }
-
-    const msgEl = document.getElementById("stLockMsg");
-    if (msgEl) msgEl.textContent = msg || "Chat is temporarily locked by admin.";
-    lock.classList.toggle("active", chatLocked);
-  }
-
-  function flashStatus(text, kind) {
-    const el = $("chatStatus");
-    if (!el) return;
-
-    el.textContent = text || "";
-    el.classList.remove("bad", "warn");
-    if (kind === "bad") el.classList.add("bad");
-    if (kind === "warn") el.classList.add("warn");
-
-    el.classList.add("st-statusflash");
-    setTimeout(() => {
-      try {
-        el.classList.remove("st-statusflash");
-      } catch { }
-    }, 240);
-  }
-
-  // ===== Presence (online counter only) =====
-  let presenceTimer = null;
-  let presenceUnsub = null;
-  function presenceDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("presence");
-  }
-
-  function startPresence({ classId, userId, onCount }) {
+  // presence (cheap)
+  let presenceTimer=null;
+  function stopPresence(){ if(presenceTimer){clearInterval(presenceTimer); presenceTimer=null;} }
+  function startPresence(cid,uid){
     stopPresence();
-    const ref = presenceDoc(classId);
-
-    const beat = async () => {
-      try {
-        await ref.set(
-          { [userId]: firebase.firestore.FieldValue.serverTimestamp() },
-          { merge: true }
-        );
-      } catch { }
-    };
-
-    beat();
-    presenceTimer = setInterval(beat, 30000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) beat();
+    const ref=presenceDoc(cid);
+    const beat=async()=>{ if(document.hidden) return; try{ await ref.set({[uid]: firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }catch{} };
+    beat(); presenceTimer=setInterval(beat,45000);
+    const unsub=ref.onSnapshot(doc=>{
+      const data=doc?.exists?(doc.data()||{}):{};
+      const now=Date.now(); const TTL=110000;
+      let c=0;
+      for(const v of Object.values(data)){ if(v?.toDate){ const ms=v.toDate().getTime(); if(now-ms<=TTL) c++; } }
+      const b=$("onlineBadge"); if(b) b.textContent=`• ${c} online`;
     });
-
-    presenceUnsub = ref.onSnapshot((doc) => {
-      const data = doc && doc.exists ? doc.data() || {} : {};
-      const now = Date.now();
-      const TTL = 90000;
-
-      let count = 0;
-      Object.values(data).forEach((v) => {
-        let ms = 0;
-        if (!v) return;
-        if (typeof v === "number") ms = v;
-        else if (v.toDate) ms = v.toDate().getTime();
-        if (ms && now - ms <= TTL) count++;
-      });
-
-      if (typeof onCount === "function") onCount(count);
-    });
-
-    if (presenceUnsub) chatUnsubs.push(presenceUnsub);
-  }
-
-  function stopPresence() {
-    if (presenceTimer) {
-      clearInterval(presenceTimer);
-      presenceTimer = null;
-    }
-    if (presenceUnsub) {
-      try {
-        presenceUnsub();
-      } catch { }
-      presenceUnsub = null;
-    }
-  }
-
-  // ===== Admin Commands =====
-  function commandsDoc(classId) {
-    return classDocRef(classId).collection("meta").doc("commands");
-  }
-
-  function startCommandsListener({
-    classId,
-    userId,
-    onLogout,
-    onRerules,
-    onLock,
-    onRefresh,
-    onTheme,
-  }) {
-    const ref = commandsDoc(classId);
-    const keyBase = `st_cmd_${classId}_`;
-
-    const unsub = ref.onSnapshot((doc) => {
-      const data = doc && doc.exists ? doc.data() || {} : {};
-
-      const logoutNonce = Number(data.logoutNonce || 0);
-      const rulesNonce = Number(data.rulesNonce || 0);
-      const refreshNonce = Number(data.refreshNonce || 0);
-
-      const lastLogout = Number(sessionStorage.getItem(keyBase + "logout") || "0");
-      const lastRules = Number(sessionStorage.getItem(keyBase + "rules") || "0");
-      const lastRef = Number(sessionStorage.getItem(keyBase + "refresh") || "0");
-
-      if (logoutNonce > lastLogout) {
-        sessionStorage.setItem(keyBase + "logout", String(logoutNonce));
-        if (typeof onLogout === "function") onLogout();
-      }
-      if (rulesNonce > lastRules) {
-        sessionStorage.setItem(keyBase + "rules", String(rulesNonce));
-        if (typeof onRerules === "function") onRerules();
-      }
-      if (refreshNonce > lastRef) {
-        sessionStorage.setItem(keyBase + "refresh", String(refreshNonce));
-        if (typeof onRefresh === "function") onRefresh();
-      }
-
-      if (typeof onLock === "function") onLock(!!data.locked, data.lockMessage || "");
-
-      if (typeof onTheme === "function" && (data.theme === "day" || data.theme === "night")) {
-        onTheme(data.theme);
-      }
-    });
-
-    if (unsub) chatUnsubs.push(unsub);
-  }
-
-  function forceReRules({ classId, userId, userName, className }) {
-    try {
-      localStorage.removeItem(rulesKey(classId, userId));
-    } catch { }
-    showRulesGate({ classId, userId, userName, className }, () => { });
-  }
-
-  function forceLogoutToClassScreen({ reason }) {
-    try {
-      setChatLocked(false, "");
-    } catch { }
-    stopPresence();
-    clearChatListeners();
-    clearLS();
-
-    selectedClassId = null;
-    selectedClassName = null;
-
-    showScreen("class");
-    try {
-      loadClasses();
-    } catch { }
-  }
-
-  // ===== RULES GATE OVERLAY (already in your app, upgraded to request notifications) =====
-  function showRulesGate({ classId, userId, userName, className }, onContinue) {
-    if (hasAcceptedRules(classId, userId)) {
-      onContinue();
-      return;
-    }
-
-    // Confetti once
-    try {
-      if (window.ST_UI && typeof window.ST_UI.confettiBurst === "function") {
-        window.ST_UI.confettiBurst(1400);
-      }
-    } catch { }
-
-    const root = $("root") || document.body;
-
-    const old = document.getElementById("rulesGateOverlay");
-    if (old) old.remove();
-
-    const overlay = document.createElement("div");
-    overlay.id = "rulesGateOverlay";
-    overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.zIndex = "99999";
-    overlay.style.display = "grid";
-    overlay.style.placeItems = "center";
-    overlay.style.padding = "16px";
-    overlay.style.background =
-      "radial-gradient(1200px 700px at 20% 10%, rgba(255,90,90,.10), transparent 60%)," +
-      "radial-gradient(900px 600px at 85% 20%, rgba(255,211,107,.10), transparent 55%)," +
-      "rgba(0,0,0,.78)";
-    overlay.style.backdropFilter = "blur(10px)";
-    overlay.style.pointerEvents = "all";
-
-    const card = document.createElement("div");
-    card.style.width = "min(860px, 96vw)";
-    card.style.borderRadius = "18px";
-    card.style.border = "1px solid rgba(255,255,255,.12)";
-    card.style.background = "linear-gradient(180deg, rgba(20,20,20,.82), rgba(16,16,16,.58))";
-    card.style.boxShadow = "0 30px 90px rgba(0,0,0,.6)";
-    card.style.padding = "22px 22px 18px 22px";
-    card.style.position = "relative";
-    card.style.overflow = "hidden";
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "800";
-    title.style.letterSpacing = ".08em";
-    title.style.fontSize = "1.12rem";
-    title.textContent = "RULES";
-
-    const sub = document.createElement("div");
-    sub.className = "muted";
-    sub.style.marginTop = "6px";
-    sub.style.lineHeight = "1.35rem";
-    sub.innerHTML = `Class: <strong>${escapeHtml(className || classId)}</strong><br/>Welcome, <strong>${escapeHtml(
-      userName || "User"
-    )}</strong>`;
-
-    const rules = document.createElement("div");
-    rules.style.marginTop = "14px";
-    rules.style.border = "1px solid rgba(255,255,255,.10)";
-    rules.style.borderRadius = "14px";
-    rules.style.padding = "12px 14px";
-    rules.style.background = "rgba(0,0,0,.35)";
-    rules.style.lineHeight = "1.45rem";
-    rules.innerHTML = `
-      <div style="opacity:.92">
-        • Be respectful.<br/>
-        • No spam / no harassment.<br/>
-        • Keep it class-appropriate.<br/>
-        • Admin can remove messages / lock chat if needed.
-      </div>
-    `;
-
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.justifyContent = "space-between";
-    row.style.alignItems = "center";
-    row.style.gap = "12px";
-    row.style.marginTop = "14px";
-    row.style.flexWrap = "wrap";
-
-    const left = document.createElement("div");
-    left.style.display = "flex";
-    left.style.alignItems = "center";
-    left.style.gap = "10px";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = "rulesCheck";
-    checkbox.style.transform = "scale(1.1)";
-    checkbox.style.cursor = "pointer";
-
-    const label = document.createElement("label");
-    label.htmlFor = "rulesCheck";
-    label.className = "muted";
-    label.style.cursor = "pointer";
-    label.textContent = "I understand and agree to follow the rules.";
-
-    left.appendChild(checkbox);
-    left.appendChild(label);
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Continue";
-    btn.disabled = true;
-
-    let secs = 2;
-    const tick = () => {
-      if (!checkbox.checked) {
-        btn.disabled = true;
-        btn.textContent = `Continue (${secs})`;
-        return;
-      }
-      btn.disabled = false;
-      btn.textContent = "Continue";
-    };
-
-    btn.textContent = `Continue (${secs})`;
-    const interval = setInterval(() => {
-      secs = Math.max(0, secs - 1);
-      if (secs === 0) {
-        tick();
-        clearInterval(interval);
-      } else {
-        tick();
-      }
-    }, 1000);
-
-    checkbox.addEventListener("change", tick);
-    tick();
-
-    btn.onclick = () => {
-      if (btn.disabled) return;
-      try {
-        clearInterval(interval);
-      } catch { }
-      setAcceptedRules(classId, userId);
-
-      // Ask for browser notifications once, right after rules acceptance
-      requestNotificationPermissionOnce();
-
-      overlay.style.opacity = "0";
-      overlay.style.transition = "opacity .18s ease";
-      overlay.style.pointerEvents = "none";
-      setTimeout(() => {
-        try {
-          overlay.remove();
-        } catch { }
-        onContinue();
-      }, 180);
-    };
-
-    row.appendChild(left);
-    row.appendChild(btn);
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(rules);
-    card.appendChild(row);
-
-    overlay.appendChild(card);
-    root.appendChild(overlay);
-  }
-
-  // ===== state =====
-  let selectedClassId = null;
-  let selectedClassName = null;
-
-  // ===== restore session on refresh =====
-  const savedClassId = localStorage.getItem("classId");
-  const savedUserId = localStorage.getItem("userId");
-  const savedName = localStorage.getItem("userName");
-  const savedClassName = localStorage.getItem("className");
-
-  // ===== CLASSES FLOW =====
-  async function loadClasses() {
-    const classesDiv = $("classes");
-    const classError = $("classError");
-    if (classError) classError.textContent = "";
-    if (!classesDiv) return;
-
-    classesDiv.textContent = "Loading…";
-
-    try {
-      const snap = await db.collection("classes").get();
-      classesDiv.innerHTML = "";
-
-      if (snap.empty) {
-        classesDiv.innerHTML = `<div class="muted">No classes found.</div>`;
-        return;
-      }
-
-      snap.forEach((doc) => {
-        const data = doc.data() || {};
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = data.name || doc.id;
-        btn.onclick = () => {
-          selectedClassId = doc.id;
-          selectedClassName = data.name || doc.id;
-
-          const pinName = $("pinClassName");
-          if (pinName) pinName.textContent = selectedClassName;
-
-          showScreen("pin");
-        };
-        classesDiv.appendChild(btn);
-      });
-    } catch (e) {
-      if (classError) classError.textContent = "Failed to load classes.";
-      classesDiv.textContent = "";
-    }
-  }
-
-  // PIN screen
-  const pinBackBtn = $("pinBackBtn");
-  const pinContinueBtn = $("pinContinueBtn");
-  const pinInput = $("pinInput");
-  const pinError = $("pinError");
-
-  if (pinBackBtn) pinBackBtn.onclick = () => showScreen("class");
-
-  if (pinContinueBtn) {
-    pinContinueBtn.onclick = async () => {
-      if (!selectedClassId) return;
-      if (pinError) pinError.textContent = "";
-
-      const pin = (pinInput && pinInput.value ? pinInput.value : "").trim();
-      if (!pin) {
-        if (pinError) pinError.textContent = "Enter the class PIN.";
-        return;
-      }
-
-      try {
-        const clsDoc = await classDocRef(selectedClassId).get();
-        if (!clsDoc.exists) {
-          if (pinError) pinError.textContent = "Class not found.";
-          return;
-        }
-        const data = clsDoc.data() || {};
-        const correctPin = String(data.pin || "").trim();
-        if (String(pin) !== correctPin) {
-          if (pinError) pinError.textContent = "Incorrect PIN.";
-          return;
-        }
-
-        showScreen("name");
-      } catch {
-        if (pinError) pinError.textContent = "PIN check failed.";
-      }
-    };
-  }
-
-  // NAME screen
-  const nameBackBtn = $("nameBackBtn");
-  const nameContinueBtn = $("nameContinueBtn");
-  const nameInput = $("nameInput");
-  const nameError = $("nameError");
-
-  if (nameBackBtn) nameBackBtn.onclick = () => showScreen("pin");
-
-  if (nameContinueBtn) {
-    nameContinueBtn.onclick = async () => {
-      if (!selectedClassId) return;
-      if (nameError) nameError.textContent = "";
-
-      const name = (nameInput && nameInput.value ? nameInput.value : "").trim();
-      if (!name) {
-        if (nameError) nameError.textContent = "Enter your name.";
-        return;
-      }
-
-      // Make a stable userId (per browser per class)
-      const userId = localStorage.getItem("userId") || Math.random().toString(36).slice(2, 12);
-
-      try {
-        // banned check
-        const bannedDoc = await bannedRef(selectedClassId, userId).get();
-        if (bannedDoc.exists) {
-          showDenied("You are banned.");
-          return;
-        }
-
-        await pendingRef(selectedClassId, userId).set({
-          name,
-          status: "pending",
-          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-
-        setLS({
-          classId: selectedClassId,
-          className: selectedClassName || selectedClassId,
-          userId,
-          userName: name,
-        });
-
-        showWaiting();
-        watchStatus({ classId: selectedClassId, userId, name });
-      } catch (e) {
-        if (nameError) nameError.textContent = "Request failed.";
-      }
-    };
-  }
-
-  function showWaiting() {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = "";
-    showScreen("wait");
-  }
-
-  function showDenied(msg) {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = msg || "You cannot join.";
-    showScreen("wait");
-  }
-
-  // Restore flow
-  function restoreFlow() {
-    if (savedClassId && savedUserId && savedName) {
-      selectedClassId = savedClassId;
-      selectedClassName = savedClassName || savedClassId;
-
-      showWaiting();
-      watchStatus({ classId: savedClassId, userId: savedUserId, name: savedName });
-    } else {
-      showScreen("class");
-      loadClasses();
-    }
-  }
-
-  // Watch approval status (pendingUsers doc)
-  function watchStatus({ classId, userId, name }) {
-    const waitStatus = $("waitStatus");
-    if (waitStatus) waitStatus.textContent = "Waiting…";
-
-    const unsub = pendingRef(classId, userId).onSnapshot(
-      (doc) => {
-        if (!doc.exists) {
-          if (waitStatus) waitStatus.textContent = "Request not found.";
-          return;
-        }
-        const data = doc.data() || {};
-        const status = data.status;
-
-        if (status === "approved") {
-          try {
-            playSound("approve");
-          } catch { }
-
-          showRulesGate(
-            {
-              classId,
-              userId,
-              userName: name,
-              className: selectedClassName || data.className || classId,
-            },
-            () => loadChat(name, classId, userId)
-          );
-        } else if (status === "rejected") {
-          showDenied("You were rejected by the admin.");
-        } else if (status === "banned") {
-          showDenied("You are banned.");
-        } else {
-          if (waitStatus) waitStatus.textContent = "Waiting for admin approval…";
-        }
-      },
-      () => {
-        if (waitStatus) waitStatus.textContent = "Connection error.";
-      }
-    );
-
-    // store as "chat" unsub too so cleanup works
     chatUnsubs.push(unsub);
   }
 
-  // ===== CHAT (OPTIMIZED RENDERING) =====
-  let chatUnsubs = [];
-
-  function clearChatListeners() {
-    chatUnsubs.forEach((u) => {
-      try {
-        u();
-      } catch { }
-    });
-    chatUnsubs = [];
-    // also stop any timers that aren't snapshot-based
-    try {
-      stopPresence();
-    } catch { }
+  // typing (debounce)
+  let typingDeb=null, typingOff=null, localTyping=false;
+  async function setTyping(cid,uid,val){
+    if(window.__st_dataSaver) return;
+    if(document.hidden) return;
+    if(localTyping===val) return;
+    localTyping=val;
+    try{ await typingDoc(cid).set({[uid]: !!val},{merge:true}); }catch{}
+  }
+  function renderTyping(data,myId){
+    const el=$("typingIndicator"); if(!el) return;
+    if(window.__st_dataSaver){ el.innerHTML=""; return; }
+    const others=Object.entries(data||{}).filter(([id,v])=>id!==myId && v===true);
+    if(others.length) el.innerHTML=`<span class="typing-bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="muted" style="margin-left:8px">Someone is typing…</span>`;
+    else el.innerHTML="";
   }
 
-  function isNearBottom(el, threshold = 120) {
-    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-  }
-
-  function fmtTime(ts) {
-    try {
-      if (!ts) return "";
-      if (typeof ts === "number") return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      if (ts.toDate) return ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      return "";
-    } catch {
-      return "";
-    }
-  }
-
-  function buildMsgEl(msg, classId, userId, userName) {
-    const wrap = document.createElement("div");
-    wrap.className = "msg";
-    wrap.dataset.id = msg.id || "";
-
-    const top = document.createElement("div");
-    top.className = "msg-top";
-    top.innerHTML = `<strong>${escapeHtml(msg.name || "User")}</strong> <span class="muted">${fmtTime(msg.timestamp)}</span>`;
-    wrap.appendChild(top);
-
-    const body = document.createElement("div");
-    body.className = "msg-text";
-    body.textContent = msg.text || "";
-    wrap.appendChild(body);
-
-    return wrap;
-  }
-
-  function updateMsgEl(el, msg) {
-    const top = el.querySelector(".msg-top");
-    const body = el.querySelector(".msg-text");
-    if (top) top.innerHTML = `<strong>${escapeHtml(msg.name || "User")}</strong> <span class="muted">${fmtTime(msg.timestamp)}</span>`;
-    if (body) body.textContent = msg.text || "";
-  }
-
-  // ===== NEW: upgraded loadChat =====
-  function loadChat(name, classId, userId) {
-    clearChatListeners();
-
-    const chatWelcome = $("chatWelcome");
-    const chatSubtitle = $("chatSubtitle");
-    const chatStatus = $("chatStatus");
-
-    if (chatWelcome) chatWelcome.textContent = `Welcome, ${name}!`;
-    if (chatSubtitle) chatSubtitle.textContent = `SecureText chat | ${selectedClassName || classId}`;
-    if (chatStatus) chatStatus.textContent = "";
-
-    showScreen("chat");
-
-    
-    // ===== Chat HUD (A): badge + clock + online mirror =====
-    (function ensureHud() {
-      const header = document.querySelector(".chat-header");
-      if (!header) return;
-      if (document.getElementById("stHud")) return;
-      const hud = document.createElement("div");
-      hud.id = "stHud";
-      hud.className = "st-hud";
-      hud.innerHTML = `
-        <div class="hud-badge"><span class="dot"></span><span class="txt">SecureText</span></div>
-        <div class="hud-chip" id="stHudClock">--:--</div>
-        <div class="hud-chip" id="stHudOnline">• 0 online</div>
-      `;
-      header.appendChild(hud);
-
-      const updateClock = () => {
-        const el = document.getElementById("stHudClock");
-        if (!el) return;
-        el.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      };
-      updateClock();
-      setInterval(updateClock, 30000);
-
-      setInterval(() => {
-        const badge = document.getElementById("onlineBadge");
-        const out = document.getElementById("stHudOnline");
-        if (badge && out) out.textContent = badge.textContent || "• 0 online";
-      }, 1200);
-    })();
-const msgInput = $("msgInput");
-    const sendBtn = $("sendBtn");
-    const messagesDiv = $("messages");
-    const typingDiv = $("typingIndicator");
-    const themeToggle = $("themeToggle"); // will be moved into settings
-    const logoutBtn = $("logoutBtn");
-
-    // ===== Enhanced UI / FX injection (once) =====
-    ensureEnhancedStyles();
-
-    // ===== Header: Settings button (Theme + Sounds) =====
-    const chatControls = document.querySelector(".chat-controls");
-    const settingsState = getSettingsState();
-
-    // Hide the old theme button (we control theme via settings)
-    if (themeToggle) themeToggle.style.display = "none";
-
-    let settingsBtn = $("settingsBtn");
-    if (!settingsBtn && chatControls) {
-      settingsBtn = document.createElement("button");
-      settingsBtn.id = "settingsBtn";
-      settingsBtn.type = "button";
-      settingsBtn.title = "Settings";
-      settingsBtn.textContent = "⚙️";
-      chatControls.insertBefore(settingsBtn, logoutBtn || null);
-    }
-
-    // Online counter badge
-    let onlineBadge = $("onlineBadge");
-    if (!onlineBadge) {
-      onlineBadge = document.createElement("span");
-      onlineBadge.id = "onlineBadge";
-      onlineBadge.className = "online-badge";
-      onlineBadge.textContent = "• 0 online";
-      if (chatSubtitle && chatSubtitle.parentElement) {
-        chatSubtitle.parentElement.appendChild(onlineBadge);
+  // commands listener
+  function startCommands(cid, handlers){
+    const ref=commandsDoc(cid);
+    const base=`st_cmd_${cid}_`;
+    let init=false;
+    const unsub=ref.onSnapshot(doc=>{
+      const d=doc?.exists?(doc.data()||{}):{};
+      const ln=Number(d.logoutNonce||0), rn=Number(d.rulesNonce||0), fn=Number(d.refreshNonce||0);
+      if(!init){
+        init=true;
+        sessionStorage.setItem(base+"logout",String(ln));
+        sessionStorage.setItem(base+"rules",String(rn));
+        sessionStorage.setItem(base+"refresh",String(fn));
+      }else{
+        const l0=Number(sessionStorage.getItem(base+"logout")||"0");
+        const r0=Number(sessionStorage.getItem(base+"rules")||"0");
+        const f0=Number(sessionStorage.getItem(base+"refresh")||"0");
+        if(ln>l0){ sessionStorage.setItem(base+"logout",String(ln)); handlers.onLogout?.(); }
+        if(rn>r0){ sessionStorage.setItem(base+"rules",String(rn)); handlers.onRerules?.(); }
+        if(fn>f0){ sessionStorage.setItem(base+"refresh",String(fn)); handlers.onRefresh?.(); }
       }
-    }
-
-    // Apply theme from settings immediately
-    applyTheme(settingsState.theme);
-    setSoundEnabled(settingsState.sound);
-
-    // Open settings modal
-    if (settingsBtn) {
-      settingsBtn.onclick = () => {
-        openSettingsModal({
-          theme: getSettingsState().theme,
-          sound: getSettingsState().sound,
-          onChange: (next) => {
-            setSettingsState(next);
-            applyTheme(next.theme);
-            setSoundEnabled(next.sound);
-          },
-        });
-      };
-    }
-
-    // logout button
-    if (logoutBtn) {
-      logoutBtn.onclick = () => {
-        forceLogoutToClassScreen({ reason: "logout" });
-      };
-    }
-
-    // ===== Enter to send (Shift+Enter newline) =====
-    if (msgInput && sendBtn) {
-      msgInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendBtn.click();
-        }
-      });
-    }
-
-    // ===== Presence (online counter) =====
-    startPresence({
-      classId,
-      userId,
-      onCount: (n) => {
-        if (onlineBadge) onlineBadge.textContent = `• ${n} online`;
-      },
+      if(typeof d.locked==="boolean") handlers.onLock?.(d.locked, d.lockMessage||"");
+      if(d.theme==="day"||d.theme==="night") handlers.onTheme?.(d.theme);
+      if(d.preset==="neon"||d.preset==="emerald"||d.preset==="mono") handlers.onPreset?.(d.preset);
+      if(typeof d.dataSaver==="boolean") handlers.onDataSaver?.(d.dataSaver);
     });
-
-    // ===== Admin Commands Listener =====
-    startCommandsListener({
-      classId,
-      userId,
-      onLogout: () => forceLogoutToClassScreen({ reason: "forced" }),
-      onRerules: () =>
-        forceReRules({
-          classId,
-          userId,
-          userName: name,
-          className: selectedClassName || classId,
-        }),
-      onLock: (locked, msg) => setChatLocked(locked, msg),
-      onRefresh: () => location.reload(),
-      onTheme: (mode) => {
-        if (mode === "day" || mode === "night") {
-          applyTheme(mode);
-        }
-      },
-    });
-
-    // ===== Announcements (limited) =====
-    chatUnsubs.push(
-      announcementsCol(classId)
-        .orderBy("timestamp", "asc")
-        .limit(10)
-        .onSnapshot(
-          (snap) => {
-            const list = $("announcementsList");
-            if (!list) return;
-            list.innerHTML = "";
-            snap.forEach((d) => {
-              const a = d.data() || {};
-              const row = document.createElement("div");
-              row.className = "announcement";
-              row.innerHTML = `<div class="a-top"><strong>${escapeHtml(a.title || "Announcement")}</strong><span class="muted">${fmtTime(
-                a.timestamp
-              )}</span></div><div class="a-body">${escapeHtml(a.body || "")}</div>`;
-              list.appendChild(row);
-            });
-          },
-          () => { }
-        )
-    );
-
-    // ===== Messages (limitToLast 75 to save reads) =====
-    let didInitialMessages = false;
-
-    chatUnsubs.push(
-      messagesCol(classId)
-        .orderBy("timestamp", "asc")
-        .limitToLast(75)
-        .onSnapshot(
-          (snap) => {
-            if (!messagesDiv) return;
-
-            const shouldStick = isNearBottom(messagesDiv, 160);
-
-            if (!didInitialMessages) {
-              messagesDiv.innerHTML = "";
-              snap.forEach((d) => {
-                const data = d.data() || {};
-                const el = buildMsgEl({ id: d.id, ...data }, classId, userId, name);
-                el.id = `msg_${d.id}`;
-                messagesDiv.appendChild(el);
-              });
-              didInitialMessages = true;
-
-              if (shouldStick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-              return;
-            }
-
-            // incremental updates after initial load
-            const frag = document.createDocumentFragment();
-
-            snap.docChanges().forEach((ch) => {
-              const doc = ch.doc;
-              const m = doc.data() || {};
-              const elId = `msg_${doc.id}`;
-              const existing = document.getElementById(elId);
-
-              if (ch.type === "added") {
-                const el = buildMsgEl({ id: doc.id, ...m }, classId, userId, name);
-                el.id = elId;
-                frag.appendChild(el);
-
-                if (document.hidden && m.userId && m.userId !== userId) {
-                  maybeNotifyNewMessage({
-                    className: selectedClassName || classId,
-                    from: m.name || "Someone",
-                    text: String(m.text || ""),
-                  });
-                  playSound("receive");
-                }
-              } else if (ch.type === "modified") {
-                if (existing) updateMsgEl(existing, { id: doc.id, ...m });
-              } else if (ch.type === "removed") {
-                if (existing) existing.remove();
-              }
-            });
-
-            if (frag.childNodes.length) messagesDiv.appendChild(frag);
-            if (shouldStick) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-          },
-          () => { }
-        )
-    );
-
-    // ===== Typing indicator (animated dots) =====
-    let typingTimeout = null;
-    let typingDebounce = null;
-    let localTyping = false;
-
-    async function setTyping(val) {
-      if (localTyping === val) return;
-      localTyping = val;
-      try {
-        await typingDoc(classId).set({ [userId]: val }, { merge: true });
-      } catch { }
-    }
-
-    if (msgInput) {
-      msgInput.oninput = () => {
-        if (typingDebounce) clearTimeout(typingDebounce);
-        typingDebounce = setTimeout(() => setTyping(true), 180);
-
-        if (typingTimeout) clearTimeout(typingTimeout);
-        typingTimeout = setTimeout(() => setTyping(false), 1400);
-      };
-    }
-
-    try {
-      typingDoc(classId).set({ [userId]: false }, { merge: true });
-    } catch { }
-
-    chatUnsubs.push(
-      typingDoc(classId).onSnapshot((doc) => {
-        if (!typingDiv) return;
-        if (!doc.exists) {
-          typingDiv.innerHTML = "";
-          return;
-        }
-        const data = doc.data() || {};
-        const others = Object.entries(data).filter(([id, val]) => id !== userId && val === true);
-
-        if (others.length > 0) {
-          typingDiv.innerHTML = `<span class="typing-bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="muted" style="margin-left:8px">Someone is typing…</span>`;
-        } else {
-          typingDiv.innerHTML = "";
-        }
-      })
-    );
-
-    // ===== Send message =====
-    if (sendBtn && msgInput) {
-      sendBtn.onclick = async () => {
-        const text = msgInput.value.trim();
-        if (!text) return;
-
-        if (isChatLocked()) {
-          flashStatus("Chat is locked by admin.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        sendBtn.disabled = true;
-        try {
-          const banDoc = await bannedRef(classId, userId).get();
-          if (banDoc.exists) {
-            showDenied();
-            return;
-          }
-
-          await messagesCol(classId).add({
-            userId,
-            name,
-            text,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-
-          msgInput.value = "";
-          try {
-            setTyping(false);
-          } catch { }
-          playSound("send");
-        } catch (e) {
-          flashStatus("Failed to send.", "bad");
-        } finally {
-          sendBtn.disabled = false;
-        }
-      };
-    }
-
-    // Request notifications after rules accepted (won't spam)
-    requestNotificationPermissionOnce();
-
-    window.addEventListener("beforeunload", () => {
-      try {
-        typingDoc(classId).set({ [userId]: false }, { merge: true });
-      } catch { }
-    });
+    chatUnsubs.push(unsub);
   }
 
-  // Reset button
-  const resetBtn = $("resetBtn");
-  if (resetBtn) {
-    resetBtn.onclick = () => {
-      clearChatListeners();
-      clearLS();
-      selectedClassId = null;
-      selectedClassName = null;
-      showScreen("class");
-      loadClasses();
+  // lock overlay
+  let chatLocked=false;
+  function setLocked(v,msg){
+    chatLocked=!!v;
+    let ov=document.getElementById("stLockOverlay");
+    if(!ov){
+      ov=document.createElement("div");
+      ov.id="stLockOverlay";
+      ov.style.cssText="position:fixed;inset:0;z-index:999998;display:none;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);padding:16px;";
+      ov.innerHTML=`<div style="width:min(620px,95vw);border-radius:16px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);padding:18px">
+        <div style="font-weight:900;letter-spacing:.10em">CHAT LOCKED</div>
+        <div id="stLockMsg" style="margin-top:8px;opacity:.85;line-height:1.35rem">Chat is temporarily locked.</div>
+      </div>`;
+      document.body.appendChild(ov);
+    }
+    const m=document.getElementById("stLockMsg"); if(m) m.textContent=msg||"Chat is temporarily locked.";
+    ov.style.display=chatLocked?"grid":"none";
+  }
+
+  // spam
+  let localMuteUntil=0, spamBlocks=0;
+  const SPAM_MIN=1100, SPAM_WIN=12000, SPAM_MAXREP=2, SPAM_MAXLEN=350;
+  let lastSendAt=0, lastSendText="";
+  const recent=[];
+  function status(msg, kind){
+    const el=$("chatStatus"); if(!el) return;
+    el.textContent=msg||"";
+    try{
+      const t=(msg||"").toLowerCase();
+      if(t.includes("slow down")||t.includes("duplicate")||t.includes("too long")){
+        spamBlocks++;
+        if(spamBlocks>=3){
+          localMuteUntil=Date.now()+10000; spamBlocks=0;
+          stFlash(); playSound("deny");
+          el.textContent="Muted for 10s (spam).";
+        }
+      }
+    }catch{}
+  }
+
+  // rules
+  const rulesKey=(cid,uid)=>`rulesAccepted_${cid}_${uid}`;
+  const hasRules=(cid,uid)=>localStorage.getItem(rulesKey(cid,uid))==="true";
+  const setRules=(cid,uid)=>localStorage.setItem(rulesKey(cid,uid),"true");
+  function showRulesGate(cid, uid, uname, cname, onContinue){
+    if(hasRules(cid,uid)){ onContinue(); return; }
+    const ov=document.createElement("div");
+    ov.style.cssText="position:fixed;inset:0;z-index:999999;display:grid;place-items:center;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);padding:16px;";
+    ov.innerHTML=`<div style="width:min(760px,95vw);border-radius:18px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(14,14,14,.76));box-shadow:0 30px 90px rgba(0,0,0,.65);padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div><div style="font-weight:900;letter-spacing:.10em">RULES</div><div style="opacity:.75;margin-top:4px">Class: ${escapeHtml(cname||cid)}</div></div>
+        <div style="opacity:.75">User: ${escapeHtml(uname||"User")}</div>
+      </div>
+      <div style="margin-top:12px;opacity:.9;line-height:1.5">
+        • Be respectful.<br/>• No spam.<br/>• Follow teacher instructions.<br/>• Don’t share personal info.<br/><br/>
+        <span style="opacity:.8">Tip: Use <b>@here</b> to ping the class (flashes + notifies).</span>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button id="rulesContinueBtn" class="primary" style="min-width:180px">Continue</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector("#rulesContinueBtn").onclick=()=>{
+      setRules(cid,uid); requestNotifOnce();
+      ov.style.pointerEvents="none"; ov.style.opacity="0";
+      setTimeout(()=>{try{ov.remove();}catch{}},120);
+      onContinue();
     };
   }
 
-  // Boot
-  restoreFlow();
+  // replies/delete minimal (no extra reads)
+  async function deleteMyMessage(docRef){
+    if(!confirm("Delete this message?")) return;
+    try{ await docRef.set({deleted:true,text:"(deleted)",deletedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }catch{ try{ await docRef.delete(); }catch{} }
+  }
+  function msgEl(id,m,me){
+    const w=document.createElement("div"); w.className="msg"; w.dataset.id=id; w.dataset.userid=m.userId||"";
+    w.innerHTML=`<div class="msg-top"><strong>${escapeHtml(m.name||"User")}</strong> <span class="muted">${fmtTime(m.timestamp)}</span></div>`;
+    const body=document.createElement("div"); body.className="msg-text";
+    const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)";
+    body.textContent=del?"(deleted)":(m.text||""); if(del) body.classList.add("deleted");
+    w.appendChild(body);
+    if(!del){
+      const acts=document.createElement("div"); acts.className="msg-actions";
+      const r=document.createElement("button"); r.className="msg-btn"; r.textContent="Reply"; r.dataset.action="reply"; acts.appendChild(r);
+      if(m.userId===me){ const d=document.createElement("button"); d.className="msg-btn"; d.textContent="Delete"; d.dataset.action="delete"; acts.appendChild(d); }
+      w.appendChild(acts);
+    }
+    return w;
+  }
+
+  // replies panel (small)
+  let replyTo=null;
+  function ensureReplyUI(){
+    if(document.getElementById("repliesPanel")) return;
+    const p=document.createElement("div");
+    p.id="repliesPanel"; p.style.cssText="position:fixed;right:18px;bottom:18px;width:min(420px,94vw);max-height:70vh;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(16,16,16,.92);backdrop-filter:blur(14px);box-shadow:0 30px 90px rgba(0,0,0,.65);display:none;flex-direction:column;z-index:999999;";
+    p.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 12px;border-bottom:1px solid rgba(255,255,255,.10);">
+      <div class="muted" id="repliesTitle">Replies</div>
+      <button id="closeRepliesBtn" class="msg-btn" type="button">Close</button>
+    </div>
+    <div id="repliesList" style="padding:10px 12px;overflow:auto;display:flex;flex-direction:column;gap:10px;"></div>
+    <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,.10);">
+      <input id="replyInput" type="text" placeholder="Reply…" style="flex:1" />
+      <button id="sendReplyBtn" type="button" class="primary" style="max-width:120px">Send</button>
+    </div>`;
+    document.body.appendChild(p);
+    document.getElementById("closeRepliesBtn").onclick=()=>{ p.style.display="none"; replyTo=null; };
+    document.getElementById("replyInput").addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); document.getElementById("sendReplyBtn").click();} });
+  }
+
+  // classes load
+  async function loadClasses(){
+    const box=$("classes"); const err=$("classError");
+    if(err) err.textContent=""; if(box) box.textContent="Loading…";
+    try{
+      const snap=await db.collection("classes").get();
+      if(!box) return;
+      box.innerHTML="";
+      snap.forEach(doc=>{
+        const d=doc.data()||{};
+        const b=document.createElement("button"); b.type="button"; b.textContent=d.name||doc.id;
+        b.onclick=()=>{ selectedClassId=doc.id; selectedClassName=d.name||doc.id; $("pinClassName").textContent=selectedClassName; showScreen("pin"); };
+        box.appendChild(b);
+      });
+      if(snap.empty) box.innerHTML=`<div class="muted">No classes found.</div>`;
+    }catch(e){ console.error(e); if(err) err.textContent="Failed to load classes."; if(box) box.textContent=""; }
+  }
+
+  // navigation
+  $("pinBackBtn").onclick=()=>showScreen("class");
+  $("nameBackBtn").onclick=()=>showScreen("pin");
+  $("resetBtn").onclick=()=>{ clearChat(); localStorage.removeItem("classId"); localStorage.removeItem("className"); localStorage.removeItem("userId"); localStorage.removeItem("userName"); selectedClassId=null; selectedClassName=null; showScreen("class"); loadClasses(); };
+
+  // pin
+  $("pinContinueBtn").onclick=async()=>{
+    if(!selectedClassId) return;
+    const pin=String($("pinInput").value||"").trim();
+    const err=$("pinError"); if(err) err.textContent="";
+    if(!pin){ if(err) err.textContent="Enter the class PIN."; return; }
+    try{
+      const doc=await classDoc(selectedClassId).get();
+      const d=doc.data()||{};
+      if(pin!==String(d.pin||"").trim()){ if(err) err.textContent="Incorrect PIN."; return; }
+      showScreen("name");
+    }catch{ if(err) err.textContent="PIN check failed."; }
+  };
+
+  // name request
+  $("nameContinueBtn").onclick=async()=>{
+    if(!selectedClassId) return;
+    const name=String($("nameInput").value||"").trim();
+    const err=$("nameError"); if(err) err.textContent="";
+    if(!name){ if(err) err.textContent="Enter your name."; return; }
+    userId = localStorage.getItem("userId") || Math.random().toString(36).slice(2,12);
+    userName = name;
+    try{
+      const b=await bannedDoc(selectedClassId,userId).get();
+      if(b.exists){ showScreen("wait"); $("waitStatus").textContent="You are banned."; return; }
+      await pendingDoc(selectedClassId,userId).set({name, status:"pending", timestamp: firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+      localStorage.setItem("classId",selectedClassId);
+      localStorage.setItem("className",selectedClassName||selectedClassId);
+      localStorage.setItem("userId",userId);
+      localStorage.setItem("userName",userName);
+      showScreen("wait");
+      $("waitStatus").textContent="Waiting for admin approval…";
+      watchStatus(selectedClassId,userId,userName);
+    }catch(e){ console.error(e); if(err) err.textContent="Request failed."; }
+  };
+
+  function watchStatus(cid, uid, uname){
+    clearChat();
+    const unsub=pendingDoc(cid,uid).onSnapshot(doc=>{
+      const ws=$("waitStatus");
+      if(!doc.exists){ if(ws) ws.textContent="Request not found."; return; }
+      const s=(doc.data()||{}).status;
+      if(s==="approved"){
+        playSound("approve");
+        showRulesGate(cid,uid,uname,selectedClassName||cid, ()=>loadChat(cid,uid,uname));
+      }else if(s==="rejected"){ if(ws) ws.textContent="You were rejected by the admin."; }
+      else if(s==="banned"){ if(ws) ws.textContent="You are banned."; }
+      else { if(ws) ws.textContent="Waiting for admin approval…"; }
+    });
+    chatUnsubs.push(unsub);
+  }
+
+  function loadChat(cid, uid, uname){
+    clearChat();
+    showScreen("chat");
+    settings=getSettings(); applyTheme(settings.theme);
+    $("chatWelcome").textContent=`Welcome, ${uname}!`;
+    $("chatSubtitle").textContent=`SecureText chat | ${selectedClassName||cid}`;
+    ensureReplyUI();
+
+    $("settingsBtn").onclick=()=>{ // minimal settings: theme/sound/@here
+      const ov=document.getElementById("stSettingsOverlay")||document.createElement("div");
+      if(!ov.id){
+        ov.id="stSettingsOverlay";
+        ov.className="st-overlay";
+        ov.innerHTML=`<div class="st-modal"><div class="st-modal-top"><div class="st-modal-title">Settings</div><button id="stClose" class="st-icon-btn" type="button">✕</button></div>
+          <div class="st-modal-body">
+            <div class="st-setting-row"><div><div class="st-setting-name">Theme</div><div class="st-setting-desc">Day / Night</div></div><button id="stTheme" class="st-pill-btn" type="button"></button></div>
+            <div class="st-setting-row"><div><div class="st-setting-name">Sounds</div><div class="st-setting-desc">Send / receive / alerts</div></div><button id="stSound" class="st-pill-btn" type="button"></button></div>
+            <div class="st-setting-row"><div><div class="st-setting-name">@here alerts</div><div class="st-setting-desc">Flash + notify</div></div><button id="stHere" class="st-pill-btn" type="button"></button></div>
+          </div></div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener("click",(e)=>{ if(e.target===ov) ov.classList.remove("on"); });
+      }
+      const render=()=>{
+        $("stTheme").textContent = settings.theme==="day"?"☀️ Day":"🌙 Night";
+        $("stSound").textContent = settings.sound?"🔊 On":"🔇 Off";
+        $("stHere").textContent = settings.here?"On":"Off";
+      };
+      render();
+      $("stClose").onclick=()=>ov.classList.remove("on");
+      $("stTheme").onclick=()=>{ settings.theme=settings.theme==="day"?"night":"day"; setSettings(settings); applyTheme(settings.theme); render(); };
+      $("stSound").onclick=()=>{ settings.sound=!settings.sound; setSettings(settings); render(); };
+      $("stHere").onclick=()=>{ settings.here=!settings.here; setSettings(settings); render(); };
+      ov.classList.add("on");
+    };
+
+    $("themeToggle").onclick=()=>{ settings.theme=settings.theme==="day"?"night":"day"; setSettings(settings); applyTheme(settings.theme); playSound("send"); };
+    const doLogout=()=>{ clearChat(); localStorage.removeItem("classId"); localStorage.removeItem("className"); localStorage.removeItem("userId"); localStorage.removeItem("userName"); selectedClassId=null; selectedClassName=null; showScreen("class"); loadClasses(); };
+    $("logoutBtn").onclick=doLogout; $("logoutBtnTop").onclick=doLogout;
+
+    // banned cache
+    window.__st_isBanned=false;
+    chatUnsubs.push(bannedDoc(cid,uid).onSnapshot(d=>{ window.__st_isBanned=!!d?.exists; }));
+
+    // commands
+    window.__st_dataSaver=false;
+    startCommands(cid,{
+      onLogout: doLogout,
+      onRerules: ()=>{ localStorage.removeItem(rulesKey(cid,uid)); showRulesGate(cid,uid,uname,selectedClassName||cid, ()=>{}); },
+      onRefresh: ()=>location.reload(),
+      onLock: (l,msg)=>setLocked(l,msg),
+      onTheme: (m)=>applyTheme(m),
+      onPreset: (p)=>applyPreset(p),
+      onDataSaver: (on)=>{ window.__st_dataSaver=!!on; },
+    });
+
+    // presence + typing listeners
+    startPresence(cid,uid);
+    chatUnsubs.push(typingDoc(cid).onSnapshot(doc=>renderTyping(doc?.data()||{}, uid)));
+
+    // announcements ping
+    chatUnsubs.push(annCol(cid).orderBy("timestamp","asc").limit(25).onSnapshot(snap=>{
+      const list=$("announcementsList"); if(!list) return;
+      list.innerHTML="";
+      snap.forEach(d=>{
+        const a=d.data()||{};
+        const row=document.createElement("div");
+        row.style.cssText="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)";
+        row.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px"><strong>${escapeHtml(a.by||"Admin")}</strong><span class="muted">${fmtTime(a.timestamp)}</span></div><div style="margin-top:6px;white-space:pre-wrap">${escapeHtml(a.text||"")}</div>`;
+        list.appendChild(row);
+      });
+      snap.docChanges().forEach(ch=>{ if(ch.type==="added"){ const a=ch.doc.data()||{}; stFlash(); playSound("approve"); maybeNotify(selectedClassName||cid, "Announcement", String(a.text||"")); } });
+    }));
+
+    const messages=$("messages");
+    const input=$("msgInput");
+    const send=$("sendBtn");
+    const loadOlderBtn=$("loadOlderBtn");
+    const loadOlderInfo=$("loadOlderInfo");
+    let oldest=null;
+
+    // enter-to-send + typing
+    input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); send.click();} });
+    input.oninput=()=>{
+      if(typingDeb) clearTimeout(typingDeb);
+      typingDeb=setTimeout(()=>setTyping(cid,uid,true),180);
+      if(typingOff) clearTimeout(typingOff);
+      typingOff=setTimeout(()=>setTyping(cid,uid,false),1400);
+    };
+
+    // send with spam
+    send.onclick=async()=>{
+      if(Date.now()<localMuteUntil){ status("Muted for 10s (spam).","warn"); playSound("deny"); return; }
+      let text=String(input.value||"").trim();
+      if(!text) return;
+      text=text.replace(/\s{3,}/g,"  ");
+      const now=Date.now();
+      if(text.length>SPAM_MAXLEN){ status(`Message too long (max ${SPAM_MAXLEN}).`,"warn"); playSound("deny"); return; }
+      if(now-lastSendAt<SPAM_MIN){ status("Slow down.","warn"); playSound("deny"); return; }
+      const cutoff=now-SPAM_WIN;
+      while(recent.length && recent[0].at<cutoff) recent.shift();
+      const reps=recent.filter(r=>r.t===text).length;
+      if(reps>=SPAM_MAXREP || (lastSendText===text && now-lastSendAt<SPAM_WIN)){ status("Duplicate spam blocked.","warn"); playSound("deny"); return; }
+      if(chatLocked){ status("Chat is locked by admin.","warn"); playSound("deny"); return; }
+      if(window.__st_isBanned){ status("You are banned.","bad"); playSound("deny"); return; }
+
+      send.disabled=true;
+      try{
+        await messagesCol(cid).add({userId:uid, name:uname, text, replyTo:null, timestamp: firebase.firestore.FieldValue.serverTimestamp()});
+        input.value=""; setTyping(cid,uid,false); playSound("send");
+        lastSendAt=now; lastSendText=text; recent.push({t:text,at:now});
+      }catch(e){ console.error(e); status("Failed to send.","bad"); }
+      finally{ send.disabled=false; }
+    };
+
+    // message actions
+    messages.addEventListener("click",(e)=>{
+      const btn=e.target.closest(".msg-btn"); if(!btn) return;
+      const msg=e.target.closest(".msg"); if(!msg) return;
+      const mid=msg.dataset.id; const muid=msg.dataset.userid;
+      if(btn.dataset.action==="delete"){ if(muid!==uid) return; deleteMyMessage(messagesCol(cid).doc(mid)); }
+      if(btn.dataset.action==="reply"){
+        replyTo=mid;
+        const panel=document.getElementById("repliesPanel"); panel.style.display="flex";
+        document.getElementById("repliesTitle").textContent="Replying…";
+        const list=document.getElementById("repliesList"); list.innerHTML=`<div class="muted" style="padding:10px">Loading replies…</div>`;
+        // live replies for this parent (limited)
+        if(window.__repliesUnsub){ try{window.__repliesUnsub();}catch{} }
+        window.__repliesUnsub = messagesCol(cid).where("replyTo","==",mid).orderBy("timestamp","asc").limitToLast(60).onSnapshot(snap=>{
+          list.innerHTML="";
+          if(snap.empty){ list.innerHTML=`<div class="muted" style="padding:10px">No replies yet.</div>`; return; }
+          snap.forEach(d=>{
+            const m=d.data()||{};
+            const row=document.createElement("div");
+            row.style.cssText="border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;background:rgba(0,0,0,.20);";
+            row.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;font-weight:800;opacity:.9"><strong>${escapeHtml(m.name||"User")}</strong><span class="muted">${fmtTime(m.timestamp)}</span></div>`;
+            const b=document.createElement("div"); b.style.cssText="margin-top:6px;white-space:pre-wrap;"; b.textContent=(m.deleted?"(deleted)":(m.text||"")); row.appendChild(b);
+            if(m.userId===uid && !m.deleted){ const dlt=document.createElement("button"); dlt.className="msg-btn"; dlt.textContent="Delete"; dlt.onclick=()=>deleteMyMessage(d.ref); row.appendChild(dlt); }
+            list.appendChild(row);
+          });
+          list.scrollTop=list.scrollHeight;
+        });
+        chatUnsubs.push(()=>{ try{window.__repliesUnsub && window.__repliesUnsub();}catch{} });
+        document.getElementById("sendReplyBtn").onclick=async()=>{
+          const ri=document.getElementById("replyInput");
+          let tx=String(ri.value||"").trim(); if(!tx||!replyTo) return;
+          if(chatLocked){ status("Chat is locked by admin.","warn"); playSound("deny"); return; }
+          if(window.__st_isBanned){ status("You are banned.","bad"); playSound("deny"); return; }
+          await messagesCol(cid).add({userId:uid,name:uname,text:tx,replyTo:replyTo,timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+          ri.value=""; playSound("send");
+        };
+      }
+    });
+
+    // pagination load older
+    loadOlderBtn.onclick=async()=>{
+      if(!oldest) return;
+      loadOlderBtn.disabled=true; loadOlderInfo.textContent="Loading…";
+      try{
+        const snap=await messagesCol(cid).orderBy("timestamp","asc").endBefore(oldest).limitToLast(30).get();
+        if(snap.empty){ loadOlderInfo.textContent="No more."; oldest=null; return; }
+        const frag=document.createDocumentFragment();
+        snap.forEach(d=>{
+          const m=d.data()||{}; const id="msg_"+d.id;
+          if(document.getElementById(id)) return;
+          const el=msgEl(d.id,m,uid); el.id=id; frag.appendChild(el);
+        });
+        oldest=snap.docs[0];
+        const prev=messages.scrollHeight;
+        messages.insertBefore(frag, messages.firstChild);
+        messages.scrollTop += (messages.scrollHeight-prev);
+        loadOlderInfo.textContent="";
+      }catch(e){ console.error(e); loadOlderInfo.textContent="Failed."; }
+      finally{ loadOlderBtn.disabled=false; }
+    };
+
+    // live listener (30 or 15)
+    const nearBottom=()=> (messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 160;
+    const liveQ=()=>messagesCol(cid).orderBy("timestamp","asc").limitToLast(window.__st_dataSaver?15:30);
+    chatUnsubs.push(liveQ().onSnapshot(snap=>{
+      const stick=nearBottom();
+      if(!messages.dataset.inited){
+        messages.innerHTML="";
+        snap.forEach(d=>{
+          const m=d.data()||{}; const el=msgEl(d.id,m,uid); el.id="msg_"+d.id; messages.appendChild(el);
+        });
+        messages.dataset.inited="1";
+        oldest=snap.docs[0]||oldest;
+        if(stick) messages.scrollTop=messages.scrollHeight;
+        return;
+      }
+      snap.docChanges().forEach(ch=>{
+        const d=ch.doc; const m=d.data()||{}; const id="msg_"+d.id;
+        const ex=document.getElementById(id);
+        if(ch.type==="added"){
+          const el=msgEl(d.id,m,uid); el.id=id; messages.appendChild(el);
+          if(stick) messages.scrollTop=messages.scrollHeight;
+          if(m.userId && m.userId!==uid){ maybeNotify(selectedClassName||cid, m.name||"Someone", String(m.text||"")); if(document.hidden) playSound("receive"); }
+        }else if(ch.type==="modified"){
+          if(ex){ const body=ex.querySelector(".msg-text"); const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)"; if(body){ body.textContent=del?"(deleted)":(m.text||""); body.classList.toggle("deleted",del); } }
+        }else if(ch.type==="removed"){ if(ex) ex.remove(); }
+      });
+    }));
+
+    // scroll button
+    (function(){
+      const btn=$("stScrollBtn"), unseenEl=$("stUnseen");
+      let unseen=0;
+      const hide=()=>{ unseen=0; unseenEl.textContent="0"; btn.classList.add("hidden"); };
+      messages.addEventListener("scroll",()=>{ if(nearBottom()) hide(); }, {passive:true});
+      btn.onclick=()=>{ messages.scrollTop=messages.scrollHeight; hide(); };
+      const mo=new MutationObserver(muts=>{
+        const isNear=nearBottom();
+        for(const m of muts){
+          for(const n of (m.addedNodes||[])){
+            if(!(n instanceof HTMLElement)) continue;
+            if(!n.classList.contains("msg")) continue;
+            if(!isNear){ unseen++; unseenEl.textContent=String(unseen); btn.classList.remove("hidden"); }
+          }
+        }
+        if(isNear) messages.scrollTop=messages.scrollHeight;
+      });
+      mo.observe(messages,{childList:true});
+      chatUnsubs.push(()=>mo.disconnect());
+    })();
+
+    requestNotifOnce();
+  }
+
+  // boot
+  const cid=localStorage.getItem("classId");
+  const uid=localStorage.getItem("userId");
+  const uname=localStorage.getItem("userName");
+  const cname=localStorage.getItem("className");
+  if(cid && uid && uname){
+    selectedClassId=cid; selectedClassName=cname||cid; userId=uid; userName=uname;
+    showScreen("wait"); $("waitStatus").textContent="Reconnecting…";
+    watchStatus(cid,uid,uname);
+  }else{
+    showScreen("class");
+    loadClasses();
+  }
 });
