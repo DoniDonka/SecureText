@@ -11,7 +11,9 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 </head>
 <body>
-  <div id="root">
+  
+  <div id="stFlash" class="st-flash"></div>
+<div id="root">
     <section id="screen-class" class="screen active">
       <div class="wrap">
         <div class="shell">
@@ -32,7 +34,11 @@
     <section id="screen-pin" class="screen">
       <div class="wrap">
         <div class="shell">
-          <div class="card">
+
+          <div class="topbar">
+            <div class="brand">ST <span class="muted">SecureText</span></div>
+            <button id="pinBackBtn" class="pill" type="button">Back</button>
+          </div><div class="card">
             <div class="row" style="justify-content:space-between;align-items:center">
               <div>
                 <h2>Enter PIN</h2>
@@ -54,7 +60,11 @@
     <section id="screen-name" class="screen">
       <div class="wrap">
         <div class="shell">
-          <div class="card">
+
+          <div class="topbar">
+            <div class="brand">ST <span class="muted">SecureText</span></div>
+            <button id="nameBackBtn" class="pill" type="button">Back</button>
+          </div><div class="card">
             <div class="row" style="justify-content:space-between;align-items:center">
               <div>
                 <h2>Your Name</h2>
@@ -76,7 +86,11 @@
     <section id="screen-wait" class="screen">
       <div class="wrap">
         <div class="shell">
-          <div class="card">
+
+          <div class="topbar">
+            <div class="brand">ST <span class="muted">SecureText</span></div>
+            <button id="resetBtn" class="pill" type="button">Back</button>
+          </div><div class="card">
             <h2>Waiting for Approval</h2>
             <div class="muted">Keep this tab open — you’ll enter chat automatically once approved.</div>
             <div id="waitStatus" class="muted" style="margin-top:10px">…</div>
@@ -89,7 +103,11 @@
     <section id="screen-chat" class="screen">
       <div class="wrap" style="padding-top:22px">
         <div class="shell" style="width:min(1100px,96vw)">
-          <div id="chat-screen" class="night">
+
+          <div class="topbar">
+            <div class="brand">ST <span class="muted">SecureText</span></div>
+            <button id="logoutBtnTop" class="pill danger" type="button">Logout</button>
+          </div><div id="chat-screen" class="night">
             <div class="chat-header">
               <div>
                 <h1 id="chatWelcome">Welcome!</h1>
@@ -107,6 +125,7 @@
             </div>
 
             <div id="chatStatus" class="muted" style="margin-top:10px"></div>
+            <div class="load-older"><button id="loadOlderBtn" type="button">Load older</button><span id="loadOlderInfo" class="muted"></span></div>
             <div id="messages" class="messages"></div>
             <div id="typingIndicator" style="margin-top:10px"></div>
 
@@ -128,5 +147,6 @@
       if(btn) btn.onclick=()=>location.href="admin.html";
     });
   </script>
+  <button id="stScrollBtn" class="st-scroll hidden" type="button"><span>↓</span><span>New</span><span id="stUnseen" class="count">0</span></button>
 </body>
 </html>

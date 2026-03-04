@@ -5,6 +5,28 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentClassId = null;
   let liveUnsubs = [];
 
+  // ===== Admin spam guard =====
+  let adminLastSendAt = 0;
+  let adminLastSendText = "";
+  const adminRecent = [];
+  const ADMIN_SPAM_MIN_INTERVAL_MS = 900;
+  const ADMIN_SPAM_REPEAT_WINDOW_MS = 10000;
+  const ADMIN_SPAM_MAX_REPEAT = 2;
+  const ADMIN_SPAM_MAX_LEN = 350;
+  function adminSpamCheck(text) {
+    const now = Date.now();
+    if (text.length > ADMIN_SPAM_MAX_LEN) return { ok:false, msg:`Too long (max ${ADMIN_SPAM_MAX_LEN}).` };
+    if (now - adminLastSendAt < ADMIN_SPAM_MIN_INTERVAL_MS) return { ok:false, msg:"Slow down." };
+    const cutoff = now - ADMIN_SPAM_REPEAT_WINDOW_MS;
+    while (adminRecent.length && adminRecent[0].at < cutoff) adminRecent.shift();
+    const reps = adminRecent.filter(r => r.t === text).length;
+    if (reps >= ADMIN_SPAM_MAX_REPEAT || (adminLastSendText === text && now - adminLastSendAt < ADMIN_SPAM_REPEAT_WINDOW_MS)) {
+      return { ok:false, msg:"Duplicate blocked." };
+    }
+    return { ok:true };
+  }
+
+
   function clearListeners() {
     liveUnsubs.forEach((u) => { try { u(); } catch {} });
     liveUnsubs = [];
@@ -76,6 +98,35 @@ document.addEventListener("DOMContentLoaded", () => {
     setStatus("Ready.", "ok");
 
     wireControls();
+
+    // ===== Extra controls: presets + data saver =====
+    (function ensureExtraControls(){
+      const screen = $("admin-screen");
+      if (!screen) return;
+      if (document.getElementById("extraControlsCard")) return;
+
+      const card = document.createElement("div");
+      card.id = "extraControlsCard";
+      card.className = "card";
+      card.style.marginTop = "12px";
+      card.innerHTML = `
+        <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">THEME PRESETS + DATA SAVER</div>
+        <div class="row">
+          <button id="presetNeonBtn" class="primary" type="button">Preset: Neon</button>
+          <button id="presetEmeraldBtn" class="primary" type="button">Preset: Emerald</button>
+          <button id="presetMonoBtn" class="primary" type="button">Preset: Mono</button>
+          <button id="presetClearBtn" type="button">Clear Preset</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="dataSaverOnBtn" class="good" type="button">Data Saver: ON</button>
+          <button id="dataSaverOffBtn" class="danger" type="button">Data Saver: OFF</button>
+        </div>
+      `;
+      const controls = document.getElementById("classControlsCard");
+      if (controls && controls.parentElement) controls.parentElement.insertBefore(card, controls.nextSibling);
+      else screen.insertBefore(card, screen.firstChild);
+    })();
+
     wirePending();
     wireBanned();
     wireAnnouncements();
@@ -262,9 +313,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function wireChat() {
+    const inp = $("adminChatInput");
+    if (inp) {
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          $("adminSendBtn").click();
+        }
+      });
+    }
     $("adminSendBtn").onclick = async () => {
-      const text = ($("adminChatInput").value || "").trim();
+      const input = $("adminChatInput");
+      let text = (input.value || "").trim();
       if (!text) return;
+      text = text.replace(/\s{3,}/g, "  ");
+      const chk = adminSpamCheck(text);
+      if (!chk.ok) { setStatus(chk.msg, "warn"); return; }
+
       await messagesCol(currentClassId).add({
         name: "Admin",
         userId: "admin",
@@ -272,7 +337,11 @@ document.addEventListener("DOMContentLoaded", () => {
         replyTo: null,
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      $("adminChatInput").value = "";
+
+      input.value = "";
+      adminLastSendAt = Date.now();
+      adminLastSendText = text;
+      adminRecent.push({ t: text, at: adminLastSendAt });
     };
 
     const unsub = messagesCol(currentClassId).orderBy("timestamp", "asc").limitToLast(75).onSnapshot((snap) => {
