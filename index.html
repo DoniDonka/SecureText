@@ -5,15 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SecureText</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- Firebase v8 CDN -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
 </head>
 <body>
-  
   <div id="stFlash" class="st-flash"></div>
-<div id="root">
+
+  <div id="root">
     <section id="screen-class" class="screen active">
       <div class="wrap">
         <div class="shell">
@@ -34,19 +33,13 @@
     <section id="screen-pin" class="screen">
       <div class="wrap">
         <div class="shell">
-
           <div class="topbar">
             <div class="brand">ST <span class="muted">SecureText</span></div>
             <button id="pinBackBtn" class="pill" type="button">Back</button>
-          </div><div class="card">
-            <div class="row" style="justify-content:space-between;align-items:center">
-              <div>
-                <h2>Enter PIN</h2>
-                <div class="muted">Class: <span id="pinClassName"></span></div>
-              </div>
-              <button id="pinBackBtn" type="button">Back</button>
-            </div>
-
+          </div>
+          <div class="card">
+            <h2>Enter PIN</h2>
+            <div class="muted">Class: <span id="pinClassName"></span></div>
             <div style="margin-top:12px">
               <input id="pinInput" type="password" placeholder="Class PIN" />
               <div id="pinError" class="err"></div>
@@ -60,19 +53,13 @@
     <section id="screen-name" class="screen">
       <div class="wrap">
         <div class="shell">
-
           <div class="topbar">
             <div class="brand">ST <span class="muted">SecureText</span></div>
             <button id="nameBackBtn" class="pill" type="button">Back</button>
-          </div><div class="card">
-            <div class="row" style="justify-content:space-between;align-items:center">
-              <div>
-                <h2>Your Name</h2>
-                <div class="muted">This is what others will see in chat.</div>
-              </div>
-              <button id="nameBackBtn" type="button">Back</button>
-            </div>
-
+          </div>
+          <div class="card">
+            <h2>Your Name</h2>
+            <div class="muted">This is what others will see in chat.</div>
             <div style="margin-top:12px">
               <input id="nameInput" type="text" placeholder="Display name" maxlength="28" />
               <div id="nameError" class="err"></div>
@@ -86,34 +73,36 @@
     <section id="screen-wait" class="screen">
       <div class="wrap">
         <div class="shell">
-
           <div class="topbar">
             <div class="brand">ST <span class="muted">SecureText</span></div>
             <button id="resetBtn" class="pill" type="button">Back</button>
-          </div><div class="card">
+          </div>
+          <div class="card">
             <h2>Waiting for Approval</h2>
             <div class="muted">Keep this tab open — you’ll enter chat automatically once approved.</div>
             <div id="waitStatus" class="muted" style="margin-top:10px">…</div>
-            <button id="resetBtn" type="button" style="margin-top:12px">Start over</button>
           </div>
         </div>
       </div>
     </section>
 
     <section id="screen-chat" class="screen">
-      <div class="wrap" style="padding-top:22px">
-        <div class="shell" style="width:min(1100px,96vw)">
-
+      <div class="wrap fullscreen">
+        <div class="shell fullscreen">
           <div class="topbar">
             <div class="brand">ST <span class="muted">SecureText</span></div>
             <button id="logoutBtnTop" class="pill danger" type="button">Logout</button>
-          </div><div id="chat-screen" class="night">
+          </div>
+
+          <div id="chat-screen" class="night">
             <div class="chat-header">
               <div>
                 <h1 id="chatWelcome">Welcome!</h1>
                 <div id="chatSubtitle" class="muted">SecureText chat</div>
+                <div id="onlineBadge" class="muted" style="margin-top:6px">• 0 online</div>
               </div>
               <div class="chat-controls">
+                <button id="settingsBtn" type="button">⚙️</button>
                 <button id="themeToggle" type="button">🌙</button>
                 <button id="logoutBtn" class="danger" type="button">Logout</button>
               </div>
@@ -125,8 +114,14 @@
             </div>
 
             <div id="chatStatus" class="muted" style="margin-top:10px"></div>
-            <div class="load-older"><button id="loadOlderBtn" type="button">Load older</button><span id="loadOlderInfo" class="muted"></span></div>
+
+            <div class="load-older">
+              <button id="loadOlderBtn" type="button">Load older</button>
+              <span id="loadOlderInfo" class="muted"></span>
+            </div>
+
             <div id="messages" class="messages"></div>
+
             <div id="typingIndicator" style="margin-top:10px"></div>
 
             <div id="chat-input">
@@ -136,17 +131,19 @@
           </div>
         </div>
       </div>
+      <button id="stScrollBtn" class="st-scroll hidden" type="button">
+        <span>↓</span><span>New</span><span id="stUnseen" class="count">0</span>
+      </button>
     </section>
   </div>
 
   <script src="firebase.js"></script>
   <script src="app.js"></script>
   <script>
-    document.addEventListener("DOMContentLoaded", function(){
-      const btn=document.getElementById("adminPathBtn");
-      if(btn) btn.onclick=()=>location.href="admin.html";
+    document.addEventListener("DOMContentLoaded", () => {
+      const btn = document.getElementById("adminPathBtn");
+      if (btn) btn.onclick = () => location.href = "admin.html";
     });
   </script>
-  <button id="stScrollBtn" class="st-scroll hidden" type="button"><span>↓</span><span>New</span><span id="stUnseen" class="count">0</span></button>
 </body>
 </html>

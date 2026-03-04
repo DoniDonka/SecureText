@@ -150,13 +150,6 @@ document.addEventListener("DOMContentLoaded", () => {
       screen.classList.remove("day", "night");
       screen.classList.add(mode2);
     }
-  function applyPreset(preset) {
-    document.body.classList.remove("preset-neon","preset-emerald","preset-mono");
-    if (preset === "neon") document.body.classList.add("preset-neon");
-    else if (preset === "emerald") document.body.classList.add("preset-emerald");
-    else if (preset === "mono") document.body.classList.add("preset-mono");
-  }
-
   }
 
   // ===== Sounds (no external files; tiny synth) =====
@@ -164,13 +157,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSoundEnabled(v) {
     soundEnabled = !!v;
   }
-  function stFlash() {
-    const el = document.getElementById("stFlash");
-    if (!el) return;
-    el.classList.add("on");
-    setTimeout(() => el.classList.remove("on"), 220);
-  }
-
   function playSound(type) {
     if (!soundEnabled) return;
     try {
@@ -660,49 +646,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Ask for browser notifications once, right after rules acceptance
       requestNotificationPermissionOnce();
 
-    // ===== Scroll-to-bottom button + unseen counter =====
-    (function wireScrollBtn(){
-      const btn = document.getElementById("stScrollBtn");
-      const unseenEl = document.getElementById("stUnseen");
-      if (!btn || !messagesDiv) return;
-      let unseen = 0;
-      const nearBottom = () => (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight) < 160;
-
-      messagesDiv.addEventListener("scroll", () => {
-        if (nearBottom()) {
-          unseen = 0;
-          if (unseenEl) unseenEl.textContent = "0";
-          btn.classList.add("hidden");
-        }
-      }, { passive:true });
-
-      btn.onclick = () => {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        unseen = 0;
-        if (unseenEl) unseenEl.textContent = "0";
-        btn.classList.add("hidden");
-      };
-
-      const mo = new MutationObserver((mut) => {
-        const isNear = nearBottom();
-        for (const m of mut) {
-          for (const n of (m.addedNodes || [])) {
-            if (!(n instanceof HTMLElement)) continue;
-            if (!n.classList.contains("msg")) continue;
-            if (!isNear) {
-              unseen++;
-              if (unseenEl) unseenEl.textContent = String(unseen);
-              btn.classList.remove("hidden");
-            }
-          }
-        }
-        if (isNear) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      });
-      mo.observe(messagesDiv, { childList:true });
-      chatUnsubs.push(() => mo.disconnect());
-    })();
-
-
       overlay.style.opacity = "0";
       overlay.style.transition = "opacity .18s ease";
       overlay.style.pointerEvents = "none";
@@ -1006,6 +949,37 @@ document.addEventListener("DOMContentLoaded", () => {
     if (chatStatus) chatStatus.textContent = "";
 
     showScreen("chat");
+
+    
+    // ===== Chat HUD (A): badge + clock + online mirror =====
+    (function ensureHud() {
+      const header = document.querySelector(".chat-header");
+      if (!header) return;
+      if (document.getElementById("stHud")) return;
+      const hud = document.createElement("div");
+      hud.id = "stHud";
+      hud.className = "st-hud";
+      hud.innerHTML = `
+        <div class="hud-badge"><span class="dot"></span><span class="txt">SecureText</span></div>
+        <div class="hud-chip" id="stHudClock">--:--</div>
+        <div class="hud-chip" id="stHudOnline">• 0 online</div>
+      `;
+      header.appendChild(hud);
+
+      const updateClock = () => {
+        const el = document.getElementById("stHudClock");
+        if (!el) return;
+        el.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      };
+      updateClock();
+      setInterval(updateClock, 30000);
+
+      setInterval(() => {
+        const badge = document.getElementById("onlineBadge");
+        const out = document.getElementById("stHudOnline");
+        if (badge && out) out.textContent = badge.textContent || "• 0 online";
+      }, 1200);
+    })();
 const msgInput = $("msgInput");
     const sendBtn = $("sendBtn");
     const messagesDiv = $("messages");
@@ -1071,14 +1045,7 @@ const msgInput = $("msgInput");
       };
     }
 
-    
-
-    // Topbar logout (Header C)
-    const logoutTop = document.getElementById("logoutBtnTop");
-    if (logoutTop && logoutBtn) {
-      logoutTop.onclick = logoutBtn.onclick;
-    }
-// ===== Enter to send (Shift+Enter newline) =====
+    // ===== Enter to send (Shift+Enter newline) =====
     if (msgInput && sendBtn) {
       msgInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -1148,7 +1115,7 @@ const msgInput = $("msgInput");
     chatUnsubs.push(
       messagesCol(classId)
         .orderBy("timestamp", "asc")
-        .limitToLast((window.__st_dataSaver ? 15 : 30))
+        .limitToLast(75)
         .onSnapshot(
           (snap) => {
             if (!messagesDiv) return;
@@ -1253,61 +1220,35 @@ const msgInput = $("msgInput");
     // ===== Send message =====
     if (sendBtn && msgInput) {
       sendBtn.onclick = async () => {
-        if (Date.now() < localMuteUntil) { flashStatus("Muted for 10s (spam).", "warn"); playSound("deny"); return; }
-        let text = String(msgInput.value || "").trim();
+        const text = msgInput.value.trim();
         if (!text) return;
-
-        // sanitize
-        text = text.replace(/\s{3,}/g, "  ");
-        const now = Date.now();
-
-        if (text.length > SPAM_MAX_LEN) {
-          flashStatus(`Message too long (max ${SPAM_MAX_LEN}).`, "warn");
-          playSound("deny");
-          return;
-        }
-        if (now - lastSendAt < SPAM_MIN_INTERVAL_MS) {
-          flashStatus("Slow down.", "warn");
-          playSound("deny");
-          return;
-        }
-
-        // repeat filter
-        const cutoff = now - SPAM_REPEAT_WINDOW_MS;
-        while (recentTexts.length && recentTexts[0].at < cutoff) recentTexts.shift();
-        const repeats = recentTexts.filter(r => r.t === text).length;
-        if (repeats >= SPAM_MAX_REPEAT || (lastSendText === text && now - lastSendAt < SPAM_REPEAT_WINDOW_MS)) {
-          flashStatus("Duplicate spam blocked.", "warn");
-          playSound("deny");
-          return;
-        }
 
         if (isChatLocked()) {
           flashStatus("Chat is locked by admin.", "warn");
           playSound("deny");
           return;
         }
-        if (window.__st_isBanned) {
-          flashStatus("You are banned.", "bad");
-          playSound("deny");
-          return;
-        }
 
         sendBtn.disabled = true;
         try {
+          const banDoc = await bannedRef(classId, userId).get();
+          if (banDoc.exists) {
+            showDenied();
+            return;
+          }
+
           await messagesCol(classId).add({
             userId,
             name,
             text,
-            replyTo: null,
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           });
+
           msgInput.value = "";
-          setTyping(classId, userId, false);
+          try {
+            setTyping(false);
+          } catch { }
           playSound("send");
-          lastSendAt = now;
-          lastSendText = text;
-          recentTexts.push({ t: text, at: now });
         } catch (e) {
           flashStatus("Failed to send.", "bad");
         } finally {
