@@ -185,6 +185,43 @@ document.addEventListener("DOMContentLoaded", () => {
       try { await ref.set({ theme: firebase.firestore.FieldValue.delete() }, { merge: true }); setStatus("✅ Forced theme cleared.", "ok"); } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
     };
 
+
+    const setPreset = async (preset) => {
+      setStatus(`Applying preset${preset ? `: ${preset}` : " (clear)"}…`, "warn");
+      try {
+        await ref.set({ preset: preset || firebase.firestore.FieldValue.delete() }, { merge: true });
+        setStatus("✅ Preset updated.", "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("Failed.", "bad");
+      }
+    };
+
+    const setDataSaver = async (enabled) => {
+      setStatus(`Setting data saver ${enabled ? "ON" : "OFF"}…`, "warn");
+      try {
+        await ref.set({ dataSaver: !!enabled }, { merge: true });
+        setStatus(`✅ Data saver ${enabled ? "ON" : "OFF"}.`, "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("Failed.", "bad");
+      }
+    };
+
+    const presetNeonBtn = $("presetNeonBtn");
+    const presetEmeraldBtn = $("presetEmeraldBtn");
+    const presetMonoBtn = $("presetMonoBtn");
+    const presetClearBtn = $("presetClearBtn");
+    const dataSaverOnBtn = $("dataSaverOnBtn");
+    const dataSaverOffBtn = $("dataSaverOffBtn");
+
+    if (presetNeonBtn) presetNeonBtn.onclick = () => setPreset("neon");
+    if (presetEmeraldBtn) presetEmeraldBtn.onclick = () => setPreset("emerald");
+    if (presetMonoBtn) presetMonoBtn.onclick = () => setPreset("mono");
+    if (presetClearBtn) presetClearBtn.onclick = () => setPreset("");
+    if (dataSaverOnBtn) dataSaverOnBtn.onclick = () => setDataSaver(true);
+    if (dataSaverOffBtn) dataSaverOffBtn.onclick = () => setDataSaver(false);
+
     $("deleteAllChatBtn").onclick = async () => {
       if (!confirm("Delete ALL chat messages?")) return;
       setStatus("Deleting chat…", "warn");

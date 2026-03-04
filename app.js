@@ -456,6 +456,8 @@ document.addEventListener("DOMContentLoaded", () => {
     onLock,
     onRefresh,
     onTheme,
+    onDataSaver,
+    onPreset,
   }) {
     const ref = commandsDoc(classId);
     const keyBase = `st_cmd_${classId}_`;
@@ -486,9 +488,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (typeof onLock === "function") onLock(!!data.locked, data.lockMessage || "");
 
-      if (typeof onTheme === "function" && (data.theme === "day" || data.theme === "night")) {
-        onTheme(data.theme);
+      if (typeof onTheme === "function") {
+        onTheme(data.theme === "day" || data.theme === "night" ? data.theme : null);
       }
+
+      if (typeof onDataSaver === "function") onDataSaver(!!data.dataSaver);
+      if (typeof onPreset === "function") onPreset(typeof data.preset === "string" ? data.preset : "");
     });
 
     if (unsub) chatUnsubs.push(unsub);
@@ -516,6 +521,48 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       loadClasses();
     } catch { }
+  }
+
+  function wireScrollToBottomButton(messagesDiv) {
+    const btn = document.getElementById("stScrollBtn");
+    const unseenEl = document.getElementById("stUnseen");
+    if (!btn || !messagesDiv) return;
+
+    let unseen = 0;
+    const nearBottom = () => (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight) < 160;
+
+    messagesDiv.addEventListener("scroll", () => {
+      if (nearBottom()) {
+        unseen = 0;
+        if (unseenEl) unseenEl.textContent = "0";
+        btn.classList.add("hidden");
+      }
+    }, { passive: true });
+
+    btn.onclick = () => {
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      unseen = 0;
+      if (unseenEl) unseenEl.textContent = "0";
+      btn.classList.add("hidden");
+    };
+
+    const mo = new MutationObserver((mut) => {
+      const isNear = nearBottom();
+      for (const m of mut) {
+        for (const n of (m.addedNodes || [])) {
+          if (!(n instanceof HTMLElement)) continue;
+          if (!n.classList.contains("msg")) continue;
+          if (!isNear) {
+            unseen++;
+            if (unseenEl) unseenEl.textContent = String(unseen);
+            btn.classList.remove("hidden");
+          }
+        }
+      }
+      if (isNear) messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+    mo.observe(messagesDiv, { childList: true });
+    chatUnsubs.push(() => mo.disconnect());
   }
 
   // ===== RULES GATE OVERLAY (already in your app, upgraded to request notifications) =====
@@ -660,48 +707,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Ask for browser notifications once, right after rules acceptance
       requestNotificationPermissionOnce();
 
-    // ===== Scroll-to-bottom button + unseen counter =====
-    (function wireScrollBtn(){
-      const btn = document.getElementById("stScrollBtn");
-      const unseenEl = document.getElementById("stUnseen");
-      if (!btn || !messagesDiv) return;
-      let unseen = 0;
-      const nearBottom = () => (messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight) < 160;
-
-      messagesDiv.addEventListener("scroll", () => {
-        if (nearBottom()) {
-          unseen = 0;
-          if (unseenEl) unseenEl.textContent = "0";
-          btn.classList.add("hidden");
-        }
-      }, { passive:true });
-
-      btn.onclick = () => {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        unseen = 0;
-        if (unseenEl) unseenEl.textContent = "0";
-        btn.classList.add("hidden");
-      };
-
-      const mo = new MutationObserver((mut) => {
-        const isNear = nearBottom();
-        for (const m of mut) {
-          for (const n of (m.addedNodes || [])) {
-            if (!(n instanceof HTMLElement)) continue;
-            if (!n.classList.contains("msg")) continue;
-            if (!isNear) {
-              unseen++;
-              if (unseenEl) unseenEl.textContent = String(unseen);
-              btn.classList.remove("hidden");
-            }
-          }
-        }
-        if (isNear) messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      });
-      mo.observe(messagesDiv, { childList:true });
-      chatUnsubs.push(() => mo.disconnect());
-    })();
-
 
       overlay.style.opacity = "0";
       overlay.style.transition = "opacity .18s ease";
@@ -729,6 +734,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ===== state =====
   let selectedClassId = null;
   let selectedClassName = null;
+  window.__st_dataSaver = false;
 
   // ===== restore session on refresh =====
   const savedClassId = localStorage.getItem("classId");
@@ -777,12 +783,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // PIN screen
-  const pinBackBtn = $("pinBackBtn");
+  const pinBackBtns = [$("pinBackBtn"), $("pinBackBtnSecondary")].filter(Boolean);
   const pinContinueBtn = $("pinContinueBtn");
   const pinInput = $("pinInput");
   const pinError = $("pinError");
 
-  if (pinBackBtn) pinBackBtn.onclick = () => showScreen("class");
+  pinBackBtns.forEach((btn) => (btn.onclick = () => showScreen("class")));
 
   if (pinContinueBtn) {
     pinContinueBtn.onclick = async () => {
@@ -816,12 +822,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // NAME screen
-  const nameBackBtn = $("nameBackBtn");
+  const nameBackBtns = [$("nameBackBtn"), $("nameBackBtnSecondary")].filter(Boolean);
   const nameContinueBtn = $("nameContinueBtn");
   const nameInput = $("nameInput");
   const nameError = $("nameError");
 
-  if (nameBackBtn) nameBackBtn.onclick = () => showScreen("pin");
+  nameBackBtns.forEach((btn) => (btn.onclick = () => showScreen("pin")));
 
   if (nameContinueBtn) {
     nameContinueBtn.onclick = async () => {
@@ -1011,6 +1017,8 @@ const msgInput = $("msgInput");
     const messagesDiv = $("messages");
     const typingDiv = $("typingIndicator");
     const themeToggle = $("themeToggle"); // will be moved into settings
+
+    wireScrollToBottomButton(messagesDiv);
     const logoutBtn = $("logoutBtn");
 
     // ===== Enhanced UI / FX injection (once) =====
@@ -1114,7 +1122,15 @@ const msgInput = $("msgInput");
       onTheme: (mode) => {
         if (mode === "day" || mode === "night") {
           applyTheme(mode);
+          return;
         }
+        applyTheme(getSettingsState().theme);
+      },
+      onDataSaver: (enabled) => {
+        window.__st_dataSaver = !!enabled;
+      },
+      onPreset: (preset) => {
+        applyPreset(preset);
       },
     });
 
@@ -1303,7 +1319,7 @@ const msgInput = $("msgInput");
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
           });
           msgInput.value = "";
-          setTyping(classId, userId, false);
+          setTyping(false);
           playSound("send");
           lastSendAt = now;
           lastSendText = text;
@@ -1327,9 +1343,9 @@ const msgInput = $("msgInput");
   }
 
   // Reset button
-  const resetBtn = $("resetBtn");
-  if (resetBtn) {
-    resetBtn.onclick = () => {
+  const resetBtns = [$("resetBtn"), $("resetBtnSecondary")].filter(Boolean);
+  if (resetBtns.length) {
+    const onReset = () => {
       clearChatListeners();
       clearLS();
       selectedClassId = null;
@@ -1337,6 +1353,7 @@ const msgInput = $("msgInput");
       showScreen("class");
       loadClasses();
     };
+    resetBtns.forEach((btn) => (btn.onclick = onReset));
   }
 
   // Boot
