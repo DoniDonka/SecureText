@@ -1,3 +1,4 @@
+// admin.js updated (reset commands button)
 document.addEventListener("DOMContentLoaded", () => {
   const $ = (id) => document.getElementById(id);
 
