@@ -97,14 +97,11 @@ document.addEventListener("DOMContentLoaded", () => {
     $("classTitle").textContent = `Managing: ${className} (${classId})`;
     setStatus("Ready.", "ok");
 
-    wireControls();
-
-    // ===== Extra controls: presets + data saver =====
+    // Extra controls: presets + data saver
     (function ensureExtraControls(){
       const screen = $("admin-screen");
       if (!screen) return;
       if (document.getElementById("extraControlsCard")) return;
-
       const card = document.createElement("div");
       card.id = "extraControlsCard";
       card.className = "card";
@@ -127,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
       else screen.insertBefore(card, screen.firstChild);
     })();
 
+    wireControls();
     wirePending();
     wireBanned();
     wireAnnouncements();
