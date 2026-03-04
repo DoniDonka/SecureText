@@ -2,73 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>SecureText Admin</title>
-  <style>
-    :root{
-      --bg:#070a0f;
-      --card:rgba(255,255,255,.06);
-      --stroke:rgba(255,255,255,.12);
-      --txt:rgba(255,255,255,.92);
-      --muted:rgba(255,255,255,.72);
-      --good:#9cffb1;
-      --warn:#ffd36b;
-      --bad:#ff6b6b;
-    }
-    html,body{height:100%;}
-    body{
-      margin:0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background:
-        radial-gradient(1200px 700px at 12% 10%, rgba(80,140,255,.14), transparent 60%),
-        radial-gradient(900px 650px at 88% 18%, rgba(255,0,130,.10), transparent 55%),
-        radial-gradient(900px 700px at 50% 92%, rgba(60,255,160,.08), transparent 60%),
-        linear-gradient(180deg, #070a0f, #05070b);
-      color:var(--txt);
-    }
-    .wrap{max-width:1100px;margin:0 auto;padding:22px 14px;}
-    .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;}
-    .brand{font-weight:900;letter-spacing:.08em}
-    .muted{opacity:.75}
-    .grid{display:grid;grid-template-columns: 1fr; gap:14px;}
-    @media(min-width: 980px){ .grid{grid-template-columns: 380px 1fr;} }
-    .card{
-      border:1px solid var(--stroke);
-      background: var(--card);
-      border-radius: 16px;
-      padding: 14px;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 20px 60px rgba(0,0,0,.45);
-    }
-    label{display:block;font-size:.9rem;opacity:.8;margin-top:10px}
-    input, textarea, button, a{
-      border-radius: 12px;
-      border:1px solid var(--stroke);
-      background: rgba(0,0,0,.22);
-      color: var(--txt);
-      padding: 10px 12px;
-      font-size: 14px;
-      text-decoration:none;
-    }
-    input, textarea, button{width:100%; box-sizing:border-box;}
-    textarea{min-height:90px; resize: vertical;}
-    button{cursor:pointer;}
-    button.primary{background: rgba(80,140,255,.20); border-color: rgba(80,140,255,.22);}
-    button.danger{background: rgba(255,80,120,.10); border-color: rgba(255,80,120,.22);}
-    button.good{background: rgba(60,255,160,.12); border-color: rgba(60,255,160,.22);}
-    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
-    .row > *{flex: 1 1 auto; min-width: 140px;}
-    .tiny{font-size:.85rem;opacity:.75}
-    .err{color: var(--bad); margin-top: 8px;}
-    .pill{display:inline-block;padding:6px 10px;border:1px solid rgba(255,255,255,.10);border-radius:999px;background:rgba(0,0,0,.18);font-size:.85rem;opacity:.9}
-    #admin-screen{display:none;}
-    #admin-dashboard{display:none;}
-    #chatMessages{max-height: 280px; overflow:auto; border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:10px; background: rgba(0,0,0,.18);}
-    .msg{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);}
-    .msg:last-child{border-bottom:none;}
-    #adminActionStatus{margin-top:10px; font-weight:800; letter-spacing:.03em; color: var(--good);}
-  </style>
-
+  <link rel="stylesheet" href="style.css" />
   <!-- Firebase v8 CDN -->
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
@@ -76,71 +12,106 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="topbar">
-      <div class="brand">SECURETEXT <span class="muted">ADMIN</span></div>
-      <a class="pill" href="index.html">Back to app</a>
-    </div>
-
-    <div id="admin-login" class="card">
-      <h2 style="margin:0 0 6px 0">Admin Login</h2>
-      <div class="muted tiny">Sign in with the admin email + password you added to the class “admins” array.</div>
-
-      <label for="adminEmail">Email</label>
-      <input id="adminEmail" type="email" placeholder="admin@school.org" autocomplete="username" />
-
-      <label for="adminPassword">Password</label>
-      <input id="adminPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
-
-      <div class="row" style="margin-top:12px">
-        <button id="loginBtn" class="primary" type="button">Login</button>
+    <div class="shell" style="width:min(1100px,96vw)">
+      <div class="topbar">
+        <div class="brand">SECURETEXT <span class="muted">ADMIN</span></div>
+        <a class="pill" href="index.html" style="text-decoration:none">Back</a>
       </div>
-      <div id="loginError" class="err"></div>
-    </div>
 
-    <div id="admin-dashboard" class="grid" style="margin-top:14px">
-      <div class="card">
-        <div class="row" style="align-items:center; justify-content:space-between">
-          <div>
-            <div class="tiny muted">Status</div>
+      <div id="admin-login" class="card">
+        <h2>Admin Login</h2>
+        <div class="muted">Login with your admin email + password.</div>
+
+        <label style="display:block;margin-top:12px" for="adminEmail" class="muted">Email</label>
+        <input id="adminEmail" type="email" autocomplete="username" />
+
+        <label style="display:block;margin-top:12px" for="adminPassword" class="muted">Password</label>
+        <input id="adminPassword" type="password" autocomplete="current-password" />
+
+        <div class="row" style="margin-top:12px">
+          <button id="loginBtn" class="primary" type="button">Login</button>
+        </div>
+        <div id="loginError" class="err"></div>
+      </div>
+
+      <div id="admin-dashboard" class="row" style="display:none; gap:14px; align-items:flex-start">
+        <div class="card" style="flex:0 0 360px">
+          <div class="row" style="align-items:center; justify-content:space-between">
             <div id="adminInfo" class="pill">Logged in</div>
+            <button id="logoutBtn" class="danger" type="button" style="max-width:160px">Logout</button>
           </div>
-          <button id="logoutBtn" class="danger" type="button" style="max-width:180px">Logout</button>
+
+          <h3 style="margin-top:14px">Select Class</h3>
+          <div id="classError" class="err"></div>
+          <div id="classButtons" class="row" style="margin-top:10px"></div>
         </div>
 
-        <h3 style="margin:14px 0 6px 0">Select Class</h3>
-        <div id="classError" class="err"></div>
-        <div id="classButtons" class="row"></div>
-      </div>
+        <div id="admin-screen" class="card" style="display:none; flex:1 1 auto">
+          <h3 id="classTitle">Managing:</h3>
+          <div id="adminActionStatus" class="muted" style="margin-top:8px"></div>
 
-      <div class="card" id="admin-screen">
-        <h3 id="classTitle" style="margin:0 0 10px 0">Managing:</h3>
+          <div class="card" style="margin-top:12px">
+            <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">CLASS CONTROLS</div>
+            <div class="row">
+              <button id="forceLogoutEveryoneBtn" class="danger" type="button">Force Logout</button>
+              <button id="forceRerulesBtn" class="danger" type="button">Force Re-Rules</button>
+              <button id="forceRefreshEveryoneBtn" class="danger" type="button">Force Refresh</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="lockMessageInput" placeholder="Lock message (optional)..." />
+              <button id="lockChatBtn" class="danger" type="button">Lock</button>
+              <button id="unlockChatBtn" class="good" type="button">Unlock</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button id="forceThemeNightBtn" class="primary" type="button">Theme Night</button>
+              <button id="forceThemeDayBtn" class="primary" type="button">Theme Day</button>
+              <button id="clearForcedThemeBtn" type="button">Clear Theme</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button id="deleteAllChatBtn" class="danger" type="button">Delete ALL Chat</button>
+              <button id="deleteAllAnnouncementsBtn" class="danger" type="button">Delete ALL Announcements</button>
+              <button id="resetCommandsBtn" class="danger" type="button">Reset Commands</button>
+            </div>
+          </div>
 
-        <div id="adminActionStatus">State: —</div>
+          <h3 style="margin-top:14px">Pending Users</h3>
+          <table id="pendingUsersTable" style="width:100%; border-collapse:collapse; margin-top:8px">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:8px;opacity:.8">Name</th>
+                <th style="text-align:left;padding:8px;opacity:.8">Approve</th>
+                <th style="text-align:left;padding:8px;opacity:.8">Reject</th>
+                <th style="text-align:left;padding:8px;opacity:.8">Ban</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
 
-        <h3 style="margin:14px 0 6px 0">Pending Users</h3>
-        <table id="pendingUsersTable">
-          <thead><tr><th>Name</th><th>Approve</th><th>Reject</th><th>Ban</th></tr></thead>
-          <tbody></tbody>
-        </table>
+          <h3 style="margin-top:14px">Banned Users</h3>
+          <table id="bannedUsersTable" style="width:100%; border-collapse:collapse; margin-top:8px">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:8px;opacity:.8">Name</th>
+                <th style="text-align:left;padding:8px;opacity:.8">UserId</th>
+                <th style="text-align:left;padding:8px;opacity:.8">Unban</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
 
-        <h3 style="margin:14px 0 6px 0">Banned Users</h3>
-        <table id="bannedUsersTable">
-          <thead><tr><th>Name</th><th>UserId</th><th>Unban</th></tr></thead>
-          <tbody></tbody>
-        </table>
+          <h3 style="margin-top:14px">Announcements</h3>
+          <textarea id="announcementInput" placeholder="Type announcement…"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button id="announceBtn" class="primary" type="button">Send</button>
+          </div>
+          <div id="announcementsList" style="margin-top:10px"></div>
 
-        <h3 style="margin:14px 0 6px 0">Announcements</h3>
-        <textarea id="announcementInput" placeholder="Type announcement…"></textarea>
-        <div class="row" style="margin-top:10px">
-          <button id="announceBtn" class="primary" type="button">Send</button>
-        </div>
-        <div id="announcementsList" style="margin-top:10px"></div>
-
-        <h3 style="margin:14px 0 6px 0">Live Chat</h3>
-        <div id="chatMessages"></div>
-        <div class="row" style="margin-top:10px">
-          <input id="adminChatInput" placeholder="Admin message…" />
-          <button id="adminSendBtn" class="primary" type="button" style="max-width:160px">Send</button>
+          <h3 style="margin-top:14px">Live Chat</h3>
+          <div id="chatMessages" class="card" style="max-height:280px; overflow:auto"></div>
+          <div class="row" style="margin-top:10px">
+            <input id="adminChatInput" placeholder="Admin message…" />
+            <button id="adminSendBtn" class="primary" type="button" style="max-width:160px">Send</button>
+          </div>
         </div>
       </div>
     </div>
