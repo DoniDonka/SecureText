@@ -105,17 +105,19 @@ document.addEventListener("DOMContentLoaded", () => {
   let chatUnsubs=[];
   function clearChat(){ chatUnsubs.forEach(u=>{try{u();}catch{}}); chatUnsubs=[]; stopPresence(); }
 
-  // presence (cheap)
+  // presence (quota-friendly: 90s when normal, 2min when data saver)
   let presenceTimer=null;
   function stopPresence(){ if(presenceTimer){clearInterval(presenceTimer); presenceTimer=null;} }
   function startPresence(cid,uid){
     stopPresence();
     const ref=presenceDoc(cid);
+    const intervalMs = window.__st_dataSaver ? 120000 : 90000;
     const beat=async()=>{ if(document.hidden) return; try{ await ref.set({[uid]: firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }catch{} };
-    beat(); presenceTimer=setInterval(beat,45000);
+    beat(); presenceTimer=setInterval(beat, intervalMs);
+    const TTL = intervalMs + 35000;
     const unsub=ref.onSnapshot(doc=>{
       const data=doc?.exists?(doc.data()||{}):{};
-      const now=Date.now(); const TTL=110000;
+      const now=Date.now();
       let c=0;
       for(const v of Object.values(data)){ if(v?.toDate){ const ms=v.toDate().getTime(); if(now-ms<=TTL) c++; } }
       const b=$("onlineBadge"); if(b) b.textContent=`• ${c} online`;
@@ -339,20 +341,62 @@ document.addEventListener("DOMContentLoaded", () => {
     }catch(e){ console.error(e); if(err) err.textContent="Request failed."; }
   };
 
+  let waitStatusHandled = false;
+  function applyStatus(doc, cid, uid, uname){
+    if(waitStatusHandled) return true;
+    const ws=$("waitStatus");
+    if(!doc||!doc.exists){ if(ws) ws.textContent="Request not found."; waitStatusHandled=true; return true; }
+    const s=(doc.data()||{}).status;
+    if(s==="approved"){
+      waitStatusHandled=true;
+      playSound("approve");
+      showRulesGate(cid,uid,uname,selectedClassName||cid, ()=>loadChat(cid,uid,uname));
+      return true;
+    }
+    if(s==="rejected"){ waitStatusHandled=true; if(ws) ws.textContent="You were rejected by the admin."; return true; }
+    if(s==="banned"){ waitStatusHandled=true; if(ws) ws.textContent="You are banned."; return true; }
+    if(ws) ws.textContent="Waiting for admin approval…";
+    return false;
+  }
+
   function watchStatus(cid, uid, uname){
     clearChat();
-    const unsub=pendingDoc(cid,uid).onSnapshot(doc=>{
-      const ws=$("waitStatus");
-      if(!doc.exists){ if(ws) ws.textContent="Request not found."; return; }
-      const s=(doc.data()||{}).status;
-      if(s==="approved"){
-        playSound("approve");
-        showRulesGate(cid,uid,uname,selectedClassName||cid, ()=>loadChat(cid,uid,uname));
-      }else if(s==="rejected"){ if(ws) ws.textContent="You were rejected by the admin."; }
-      else if(s==="banned"){ if(ws) ws.textContent="You are banned."; }
-      else { if(ws) ws.textContent="Waiting for admin approval…"; }
+    waitStatusHandled = false;
+    const ref=pendingDoc(cid,uid);
+
+    // Real-time listener (works at home when WebSockets are allowed)
+    const unsub=ref.onSnapshot(doc=>{
+      if(applyStatus(doc, cid, uid, uname)) { /* done */ }
     });
+
+    // Polling fallback for school networks (quota-friendly: check every 10s)
+    const POLL_INTERVAL_MS = 10000;
+    let pollTimer = null;
+    const poll = async ()=>{
+      try {
+        const doc = await ref.get();
+        if(applyStatus(doc, cid, uid, uname) && pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      } catch (e) { /* ignore; will retry next time */ }
+    };
+    pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+    poll(); // check once right away
     chatUnsubs.push(unsub);
+    chatUnsubs.push(()=>{ if(pollTimer) clearInterval(pollTimer); });
+
+    const testResult=$("waitTestResult"); if(testResult) testResult.textContent="";
+    const testBtn=$("waitTestConnectionBtn");
+    if(testBtn) testBtn.onclick=async ()=>{
+      const res=$("waitTestResult"); if(res) res.textContent="Checking…";
+      try {
+        await ref.get();
+        if($("waitTestResult")) $("waitTestResult").textContent="Connection OK";
+      } catch (e) {
+        if($("waitTestResult")) $("waitTestResult").textContent="Could not reach server";
+      }
+    };
   }
 
   function loadChat(cid, uid, uname){
@@ -467,7 +511,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chatUnsubs.push(typingDoc(cid).onSnapshot(doc=>renderTyping(doc?.data()||{}, uid)));
 
     // announcements ping
-    chatUnsubs.push(annCol(cid).orderBy("timestamp","asc").limit(25).onSnapshot(snap=>{
+    chatUnsubs.push(annCol(cid).orderBy("timestamp","asc").limit(15).onSnapshot(snap=>{
       const list=$("announcementsList"); if(!list) return;
       list.innerHTML="";
       snap.forEach(d=>{
@@ -491,9 +535,9 @@ document.addEventListener("DOMContentLoaded", () => {
     input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); send.click();} });
     input.oninput=()=>{
       if(typingDeb) clearTimeout(typingDeb);
-      typingDeb=setTimeout(()=>setTyping(cid,uid,true),180);
+      typingDeb=setTimeout(()=>setTyping(cid,uid,true),400);
       if(typingOff) clearTimeout(typingOff);
-      typingOff=setTimeout(()=>setTyping(cid,uid,false),1400);
+      typingOff=setTimeout(()=>setTyping(cid,uid,false),2500);
     };
 
     // send with spam
@@ -584,7 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // live listener (30 or 15)
     const nearBottom=()=> (messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 160;
-    const liveQ=()=>messagesCol(cid).orderBy("timestamp","asc").limitToLast(window.__st_dataSaver?15:30);
+    const liveQ=()=>messagesCol(cid).orderBy("timestamp","asc").limitToLast(window.__st_dataSaver?15:25);
     chatUnsubs.push(liveQ().onSnapshot(snap=>{
       const stick=nearBottom();
       if(!messages.dataset.inited){

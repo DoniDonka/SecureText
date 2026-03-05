@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("exportChatBtn").onclick = async () => {
       setStatus("Exporting chat…", "warn");
       try {
-        const snap = await messagesCol(currentClassId).orderBy("timestamp", "asc").limit(500).get();
+        const snap = await messagesCol(currentClassId).orderBy("timestamp", "asc").limit(300).get();
         const lines = [];
         snap.forEach((d) => {
           const m = d.data() || {};
@@ -383,7 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
       adminRecent.push({ t: text, at: adminLastSendAt });
     };
 
-    const unsub = messagesCol(currentClassId).orderBy("timestamp", "asc").limitToLast(75).onSnapshot((snap) => {
+    const unsub = messagesCol(currentClassId).orderBy("timestamp", "asc").limitToLast(50).onSnapshot((snap) => {
       const box = $("chatMessages");
       box.innerHTML = "";
       snap.forEach((doc) => {
