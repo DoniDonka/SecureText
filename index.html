@@ -110,6 +110,8 @@
                 <div id="onlineBadge" class="muted" style="margin-top:6px">• 0 online</div>
               </div>
               <div class="chat-controls">
+                <span id="connectionDot" class="st-connection-dot" title="Connection"></span>
+                <button id="helpBtn" type="button" title="Help &amp; shortcuts">❓</button>
                 <button id="searchToggleBtn" type="button" title="Search &amp; export">🔍</button>
                 <button id="settingsBtn" type="button" title="Settings">⚙️</button>
                 <button id="themeToggle" type="button" title="Theme">🌙</button>
@@ -141,8 +143,10 @@
 
             <div id="typingIndicator" style="margin-top:10px"></div>
 
+            <div id="emojiPickerStrip" class="st-emoji-strip hidden"></div>
             <div id="chat-input">
-              <input id="msgInput" type="text" placeholder="Message…" autocomplete="off" />
+              <button id="emojiPickerBtn" type="button" class="st-emoji-btn" title="Insert emoji">😀</button>
+              <input id="msgInput" type="text" placeholder="Message… (Enter to send, / to search)" autocomplete="off" />
               <button id="sendBtn" class="primary" type="button">Send</button>
             </div>
           </div>

@@ -390,8 +390,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const m = doc.data() || {};
         const t = m.timestamp && m.timestamp.toDate ? m.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "…";
         const div = document.createElement("div");
-        div.className = "msg";
-        div.textContent = `[${t}] ${m.name || ""}: ${m.text || ""}`;
+        div.className = "msg admin-msg";
+        div.style.display = "flex"; div.style.alignItems = "flex-start"; div.style.gap = "8px"; div.style.padding = "8px 0"; div.style.borderBottom = "1px solid rgba(255,255,255,.08)";
+        const text = document.createElement("span");
+        text.style.flex = "1"; text.style.minWidth = "0";
+        text.textContent = `[${t}] ${m.name || ""}: ${m.deleted ? "(deleted)" : (m.text || "")}`;
+        div.appendChild(text);
+        const acts = document.createElement("div");
+        acts.style.flexShrink = "0";
+        const delBtn = document.createElement("button"); delBtn.className = "msg-btn danger"; delBtn.textContent = "Delete"; delBtn.type = "button";
+        delBtn.onclick = async () => { try { await doc.ref.delete(); setStatus("Message deleted.", "ok"); } catch (e) { setStatus("Failed.", "bad"); } };
+        const pinBtn = document.createElement("button"); pinBtn.className = "msg-btn primary"; pinBtn.textContent = "Pin"; pinBtn.type = "button";
+        pinBtn.onclick = async () => {
+          try {
+            await pinnedDoc(currentClassId).set({ messageId: doc.id, text: m.text || "", name: m.name || "", timestamp: m.timestamp, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+            setStatus("Pinned message set.", "ok");
+          } catch (e) { setStatus("Failed.", "bad"); }
+        };
+        acts.appendChild(delBtn); acts.appendChild(pinBtn);
+        div.appendChild(acts);
         box.appendChild(div);
       });
       box.scrollTop = box.scrollHeight;

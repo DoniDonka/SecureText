@@ -14,6 +14,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function fmtTime(ts){
     try { return ts?.toDate ? ts.toDate().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : ""; } catch { return ""; }
   }
+  function fmtTimeFull(ts){
+    try { return ts?.toDate ? ts.toDate().toLocaleString() : ""; } catch { return ""; }
+  }
 
   // flash
   function stFlash(){
@@ -28,18 +31,23 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSettings(s){ try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch{} }
   let settings=getSettings();
 
+  function resolveThemeMode(){
+    const t=settings.theme;
+    if(t==="system" && typeof window.matchMedia!=="undefined" && window.matchMedia("(prefers-color-scheme: light)").matches) return "day";
+    if(t==="system") return "night";
+    return t==="day"?"day":"night";
+  }
   function applyTheme(mode) {
-    // Apply to chat container + overall page background
+    const resolved = mode==="system" ? resolveThemeMode() : (mode==="day"?"day":"night");
     const cs = document.getElementById("chat-screen");
     if (cs) {
       cs.classList.remove("day","night");
-      cs.classList.add(mode === "day" ? "day" : "night");
+      cs.classList.add(resolved);
     }
     document.body.classList.remove("theme-day","theme-night");
-    document.body.classList.add(mode === "day" ? "theme-day" : "theme-night");
-
+    document.body.classList.add(resolved === "day" ? "theme-day" : "theme-night");
     const tbtn = document.getElementById("themeToggle");
-    if (tbtn) tbtn.textContent = mode === "day" ? "☀️" : "🌙";
+    if (tbtn) tbtn.textContent = resolved === "day" ? "☀️" : "🌙";
   }
   function applyPreset(p){
     document.body.classList.remove("preset-neon","preset-emerald","preset-mono");
@@ -116,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
     beat(); presenceTimer=setInterval(beat, intervalMs);
     const TTL = intervalMs + 35000;
     const unsub=ref.onSnapshot(doc=>{
+      if(window.__st_connUpdate) window.__st_connUpdate();
       const data=doc?.exists?(doc.data()||{}):{};
       const now=Date.now();
       let c=0;
@@ -246,20 +255,55 @@ document.addEventListener("DOMContentLoaded", () => {
     if(!confirm("Delete this message?")) return;
     try{ await docRef.set({deleted:true,text:"(deleted)",deletedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }catch{ try{ await docRef.delete(); }catch{} }
   }
+  const REACTION_EMOJI=["👍","❤️","😂","🔥"];
+  const EDIT_WINDOW_MS=120000;
   function msgEl(id,m,me){
     const w=document.createElement("div"); w.className="msg"; w.dataset.id=id; w.dataset.userid=m.userId||"";
-    w.innerHTML=`<div class="msg-top"><strong>${escapeHtml(m.name||"User")}</strong> <span class="muted">${fmtTime(m.timestamp)}</span></div>`;
+    const timeStr=fmtTime(m.timestamp); const timeFull=fmtTimeFull(m.timestamp);
+    w.innerHTML=`<div class="msg-top"><strong>${escapeHtml(m.name||"User")}</strong> <span class="muted msg-time" title="${escapeHtml(timeFull)}">${timeStr}</span></div>`;
     const body=document.createElement("div"); body.className="msg-text";
     const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)";
-    body.textContent=del?"(deleted)":(m.text||""); if(del) body.classList.add("deleted");
+    const textDisplay=del?"(deleted)":(m.text||"");
+    const edited=!!m.editedAt;
+    body.textContent=textDisplay+(edited&&!del?" (edited)":""); if(del) body.classList.add("deleted");
     w.appendChild(body);
     if(!del){
       const acts=document.createElement("div"); acts.className="msg-actions";
+      const copyBtn=document.createElement("button"); copyBtn.className="msg-btn"; copyBtn.textContent="Copy"; copyBtn.dataset.action="copy"; acts.appendChild(copyBtn);
       const r=document.createElement("button"); r.className="msg-btn"; r.textContent="Reply"; r.dataset.action="reply"; acts.appendChild(r);
+      const tsMs=m.timestamp?.toDate?.()?.getTime?.()||0;
+      const canEdit=m.userId===me && tsMs && (Date.now()-tsMs<EDIT_WINDOW_MS);
+      if(canEdit){ const ed=document.createElement("button"); ed.className="msg-btn"; ed.textContent="Edit"; ed.dataset.action="edit"; acts.appendChild(ed); }
       if(m.userId===me){ const d=document.createElement("button"); d.className="msg-btn"; d.textContent="Delete"; d.dataset.action="delete"; acts.appendChild(d); }
       w.appendChild(acts);
+      const rx=document.createElement("div"); rx.className="msg-reactions";
+      const reactions= m.reactions||{};
+      REACTION_EMOJI.forEach(emoji=>{
+        const uids=reactions[emoji]||[];
+        const count=uids.length;
+        const mine=uids.includes(me);
+        const b=document.createElement("button"); b.className="msg-reaction-btn"+(mine?" active":"");
+        b.textContent=emoji+(count?` ${count}`:""); b.dataset.emoji=emoji; b.dataset.action="react";
+        rx.appendChild(b);
+      });
+      w.appendChild(rx);
     }
     return w;
+  }
+  function updateMsgReactionsAndEdit(el,m,me){
+    const body=el.querySelector(".msg-text");
+    const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)";
+    if(body){ body.textContent=(del?"(deleted)":(m.text||""))+(m.editedAt&&!del?" (edited)":""); body.classList.toggle("deleted",del); }
+    const rx=el.querySelector(".msg-reactions");
+    if(rx){
+      const reactions=m.reactions||{};
+      rx.querySelectorAll(".msg-reaction-btn").forEach(b=>{
+        const emoji=b.dataset.emoji;
+        const uids=reactions[emoji]||[];
+        b.textContent=emoji+(uids.length?` ${uids.length}`:"");
+        b.classList.toggle("active",uids.includes(me));
+      });
+    }
   }
 
   // replies panel (small)
@@ -424,7 +468,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const text=String(d.text||"").trim();
       if(!text){ pinnedBox.classList.add("hidden"); pinnedBox.innerHTML=""; return; }
       pinnedBox.classList.remove("hidden");
-      pinnedBox.innerHTML=`<div class="st-pinned-label">📌 Pinned</div><div class="st-pinned-text">${escapeHtml(text)}</div>`;
+      const by=d.name?` — ${escapeHtml(d.name)}`:"";
+      pinnedBox.innerHTML=`<div class="st-pinned-label">📌 Pinned${by}</div><div class="st-pinned-text">${escapeHtml(text)}</div>`;
     }));
 
     // Search & export toolbar
@@ -466,7 +511,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ov.className="st-overlay";
         ov.innerHTML=`<div class="st-modal"><div class="st-modal-top"><div class="st-modal-title">Settings</div><button id="stClose" class="st-icon-btn" type="button">✕</button></div>
           <div class="st-modal-body">
-            <div class="st-setting-row"><div><div class="st-setting-name">Theme</div><div class="st-setting-desc">Day / Night</div></div><button id="stTheme" class="st-pill-btn" type="button"></button></div>
+            <div class="st-setting-row"><div><div class="st-setting-name">Theme</div><div class="st-setting-desc">Day / Night / System</div></div><select id="stThemeSelect"><option value="night">🌙 Night</option><option value="day">☀️ Day</option><option value="system">📱 System</option></select></div>
             <div class="st-setting-row"><div><div class="st-setting-name">Sounds</div><div class="st-setting-desc">Send / receive / alerts</div></div><button id="stSound" class="st-pill-btn" type="button"></button></div>
             <div class="st-setting-row"><div><div class="st-setting-name">@here alerts</div><div class="st-setting-desc">Flash + notify</div></div><button id="stHere" class="st-pill-btn" type="button"></button></div>
           </div></div>`;
@@ -474,17 +519,86 @@ document.addEventListener("DOMContentLoaded", () => {
         ov.addEventListener("click",(e)=>{ if(e.target===ov) ov.classList.remove("on"); });
       }
       const render=()=>{
-        $("stTheme").textContent = settings.theme==="day"?"☀️ Day":"🌙 Night";
+        const sel=$("stThemeSelect"); if(sel) sel.value=settings.theme||"night";
         $("stSound").textContent = settings.sound?"🔊 On":"🔇 Off";
         $("stHere").textContent = settings.here?"On":"Off";
       };
       render();
       $("stClose").onclick=()=>ov.classList.remove("on");
-      $("stTheme").onclick=()=>{ settings.theme=settings.theme==="day"?"night":"day"; setSettings(settings); applyTheme(settings.theme); render(); };
+      const themeSel=$("stThemeSelect"); if(themeSel) themeSel.onchange=()=>{ settings.theme=themeSel.value; setSettings(settings); applyTheme(settings.theme); render(); };
+      try{ const q=window.matchMedia("(prefers-color-scheme: light)"); q.addEventListener("change",()=>{ if(settings.theme==="system") applyTheme("system"); }); }catch{}
       $("stSound").onclick=()=>{ settings.sound=!settings.sound; setSettings(settings); render(); };
       $("stHere").onclick=()=>{ settings.here=!settings.here; setSettings(settings); render(); };
       ov.classList.add("on");
     };
+
+    // Help modal
+    function showHelpModal(){
+      const ov=document.getElementById("stHelpOverlay")||document.createElement("div");
+      if(!ov.id){
+        ov.id="stHelpOverlay"; ov.className="st-overlay";
+        ov.innerHTML=`<div class="st-modal st-help-modal"><div class="st-modal-top"><div class="st-modal-title">Help &amp; shortcuts</div><button id="stHelpClose" class="st-icon-btn" type="button">✕</button></div>
+          <div class="st-modal-body">
+            <p><strong>Shortcuts</strong></p>
+            <ul class="st-help-list">
+              <li><kbd>Enter</kbd> Send message</li>
+              <li><kbd>/</kbd> Focus search</li>
+              <li><kbd>Esc</kbd> Close modal / panel</li>
+            </ul>
+            <p><strong>Tips</strong></p>
+            <ul class="st-help-list">
+              <li>Use <b>@here</b> in a message to ping the whole class (flash + notification).</li>
+              <li>🔍 opens search and export. Export saves visible messages as a text file.</li>
+              <li>School networks (e.g. NYCDOE) may delay updates; the app checks every 10 seconds.</li>
+            </ul>
+          </div></div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener("click",e=>{ if(e.target===ov) ov.classList.remove("on"); });
+        ov.querySelector("#stHelpClose").onclick=()=>ov.classList.remove("on");
+      }
+      ov.classList.add("on");
+    }
+    $("helpBtn").onclick=showHelpModal;
+
+    // Keyboard: Esc close modals, / focus search
+    document.addEventListener("keydown",function stGlobalKey(e){
+      if(e.key==="Escape"){
+        document.getElementById("stSettingsOverlay")?.classList.remove("on");
+        document.getElementById("stHelpOverlay")?.classList.remove("on");
+        const rp=document.getElementById("repliesPanel"); if(rp&&rp.style.display==="flex"){ rp.style.display="none"; replyTo=null; }
+      }
+      if(e.key==="/" && document.activeElement?.id!=="chatSearchInput" && document.activeElement?.id!=="msgInput"){
+        const chatScreen=$("screen-chat");
+        if(chatScreen&&chatScreen.classList.contains("active")){
+          e.preventDefault();
+          const wrap=$("chatSearchWrap"); const inp=$("chatSearchInput");
+          if(wrap&&inp){ wrap.style.display="flex"; inp.focus(); }
+        }
+      }
+    });
+
+    // Connection indicator (green = recent update, gray = stale)
+    let lastFirestoreUpdate=0;
+    const connDot=$("connectionDot");
+    if(connDot){
+      lastFirestoreUpdate=Date.now();
+      connDot.classList.add("ok");
+      window.__st_connUpdate=()=>{ lastFirestoreUpdate=Date.now(); connDot.classList.add("ok"); connDot.classList.remove("stale"); };
+      const checkConn=()=>{ connDot.classList.toggle("ok", Date.now()-lastFirestoreUpdate<35000); connDot.classList.toggle("stale", Date.now()-lastFirestoreUpdate>=35000); };
+      setInterval(checkConn,8000);
+      chatUnsubs.push(()=>{ delete window.__st_connUpdate; });
+    }
+
+    // Emoji picker
+    const EMOJI_LIST=["👍","❤️","😂","😮","😢","🔥","👏","🙏","✨","🎉"];
+    const strip=$("emojiPickerStrip"); const emojiBtn=$("emojiPickerBtn");
+    if(strip){ strip.innerHTML=EMOJI_LIST.map(e=>`<button type="button" class="st-emoji-opt" data-emoji="${e}">${e}</button>`).join(""); }
+    if(emojiBtn&&strip){
+      emojiBtn.onclick=()=>strip.classList.toggle("hidden");
+      strip.querySelectorAll(".st-emoji-opt").forEach(btn=>{
+        btn.onclick=()=>{ const v=$("msgInput"); if(v){ v.value+=btn.dataset.emoji; v.focus(); } };
+      });
+    }
 
     $("themeToggle").onclick=()=>{ settings.theme=settings.theme==="day"?"night":"day"; setSettings(settings); applyTheme(settings.theme); playSound("send"); };
     const doLogout=()=>{ clearChat(); localStorage.removeItem("classId"); localStorage.removeItem("className"); localStorage.removeItem("userId"); localStorage.removeItem("userName"); selectedClassId=null; selectedClassName=null; showScreen("class"); loadClasses(); };
@@ -565,12 +679,40 @@ document.addEventListener("DOMContentLoaded", () => {
       finally{ send.disabled=false; }
     };
 
-    // message actions
-    messages.addEventListener("click",(e)=>{
+    // message actions (copy, reply, edit, delete, react)
+    messages.addEventListener("click",async (e)=>{
+      const reactBtn=e.target.closest(".msg-reaction-btn");
+      if(reactBtn&&reactBtn.dataset.action==="react"){
+        const msg=e.target.closest(".msg"); if(!msg) return;
+        const mid=msg.dataset.id; const emoji=reactBtn.dataset.emoji;
+        const docRef=messagesCol(cid).doc(mid);
+        try {
+          const doc=await docRef.get(); const data=doc.data()||{};
+          const reactions={...(data.reactions||{})}; const arr=reactions[emoji]||[];
+          const idx=arr.indexOf(uid);
+          if(idx>=0) arr.splice(idx,1); else arr.push(uid);
+          if(arr.length) reactions[emoji]=arr; else delete reactions[emoji];
+          await docRef.update({reactions});
+          if(window.__st_connUpdate) window.__st_connUpdate();
+        }catch(err){ console.error(err); }
+        return;
+      }
       const btn=e.target.closest(".msg-btn"); if(!btn) return;
       const msg=e.target.closest(".msg"); if(!msg) return;
       const mid=msg.dataset.id; const muid=msg.dataset.userid;
-      if(btn.dataset.action==="delete"){ if(muid!==uid) return; deleteMyMessage(messagesCol(cid).doc(mid)); }
+      if(btn.dataset.action==="copy"){
+        const text=msg.querySelector(".msg-text")?.textContent||""; if(text) navigator.clipboard?.writeText(text).then(()=>status("Copied.", "ok")).catch(()=>{});
+        return;
+      }
+      if(btn.dataset.action==="edit"){
+        if(muid!==uid||chatLocked||window.__st_isBanned) return;
+        const body=msg.querySelector(".msg-text"); const current=body?.textContent?.replace(/\s*\(edited\)\s*$/,"")||"";
+        const newText=prompt("Edit message", current); if(newText==null) return;
+        const trimmed=String(newText).trim(); if(!trimmed) return;
+        try{ await messagesCol(cid).doc(mid).update({text:trimmed,editedAt:firebase.firestore.FieldValue.serverTimestamp()}); if(window.__st_connUpdate) window.__st_connUpdate(); }catch(err){ console.error(err); }
+        return;
+      }
+      if(btn.dataset.action==="delete"){ if(muid!==uid) return; deleteMyMessage(messagesCol(cid).doc(mid)); return; }
       if(btn.dataset.action==="reply"){
         replyTo=mid;
         const panel=document.getElementById("repliesPanel"); panel.style.display="flex";
@@ -578,7 +720,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const list=document.getElementById("repliesList"); list.innerHTML=`<div class="muted" style="padding:10px">Loading replies…</div>`;
         // live replies for this parent (limited)
         if(window.__repliesUnsub){ try{window.__repliesUnsub();}catch{} }
-        window.__repliesUnsub = messagesCol(cid).where("replyTo","==",mid).orderBy("timestamp","asc").limitToLast(60).onSnapshot(snap=>{
+        window.__repliesUnsub = messagesCol(cid).where("replyTo","==",mid).orderBy("timestamp","asc").limitToLast(30).onSnapshot(snap=>{
           list.innerHTML="";
           if(snap.empty){ list.innerHTML=`<div class="muted" style="padding:10px">No replies yet.</div>`; return; }
           snap.forEach(d=>{
@@ -639,6 +781,7 @@ document.addEventListener("DOMContentLoaded", () => {
         messages.dataset.inited="1";
         oldest=snap.docs[0]||oldest;
         if(stick) messages.scrollTop=messages.scrollHeight;
+        if(window.__st_connUpdate) window.__st_connUpdate();
         return;
       }
       snap.docChanges().forEach(ch=>{
@@ -649,25 +792,28 @@ document.addEventListener("DOMContentLoaded", () => {
           if(stick) messages.scrollTop=messages.scrollHeight;
           if(m.userId && m.userId!==uid){ maybeNotify(selectedClassName||cid, m.name||"Someone", String(m.text||"")); if(document.hidden) playSound("receive"); }
         }else if(ch.type==="modified"){
-          if(ex){ const body=ex.querySelector(".msg-text"); const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)"; if(body){ body.textContent=del?"(deleted)":(m.text||""); body.classList.toggle("deleted",del); } }
+          if(ex) updateMsgReactionsAndEdit(ex,m,uid);
         }else if(ch.type==="removed"){ if(ex) ex.remove(); }
       });
+      if(snap.docChanges().length && window.__st_connUpdate) window.__st_connUpdate();
     }));
 
-    // scroll button
+    // scroll button + tab title unread
+    const defaultTitle=document.title||"SecureText";
     (function(){
       const btn=$("stScrollBtn"), unseenEl=$("stUnseen");
       let unseen=0;
-      const hide=()=>{ unseen=0; unseenEl.textContent="0"; btn.classList.add("hidden"); };
+      const hide=()=>{ unseen=0; if(unseenEl) unseenEl.textContent="0"; if(btn) btn.classList.add("hidden"); document.title=defaultTitle; };
       messages.addEventListener("scroll",()=>{ if(nearBottom()) hide(); }, {passive:true});
-      btn.onclick=()=>{ messages.scrollTop=messages.scrollHeight; hide(); };
+      if(btn) btn.onclick=()=>{ messages.scrollTop=messages.scrollHeight; hide(); };
+      window.addEventListener("focus",()=>{ if(nearBottom()) hide(); });
       const mo=new MutationObserver(muts=>{
         const isNear=nearBottom();
         for(const m of muts){
           for(const n of (m.addedNodes||[])){
             if(!(n instanceof HTMLElement)) continue;
             if(!n.classList.contains("msg")) continue;
-            if(!isNear){ unseen++; unseenEl.textContent=String(unseen); btn.classList.remove("hidden"); }
+            if(!isNear){ unseen++; if(unseenEl) unseenEl.textContent=String(unseen); if(btn) btn.classList.remove("hidden"); if(document.hidden) document.title=`(${unseen}) ${defaultTitle}`; }
           }
         }
         if(isNear) messages.scrollTop=messages.scrollHeight;
