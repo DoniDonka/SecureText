@@ -45,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function messagesCol(classId) { return classDocRef(classId).collection("messages"); }
   function announcementsCol(classId) { return classDocRef(classId).collection("announcements"); }
   function commandsDoc(classId) { return classDocRef(classId).collection("meta").doc("commands"); }
+  function pinnedDoc(classId) { return classDocRef(classId).collection("meta").doc("pinned"); }
 
   // ===== login =====
   $("loginBtn").onclick = async () => {
@@ -97,34 +98,9 @@ document.addEventListener("DOMContentLoaded", () => {
     $("classTitle").textContent = `Managing: ${className} (${classId})`;
     setStatus("Ready.", "ok");
 
-    // Extra controls: presets + data saver
-    (function ensureExtraControls(){
-      const screen = $("admin-screen");
-      if (!screen) return;
-      if (document.getElementById("extraControlsCard")) return;
-      const card = document.createElement("div");
-      card.id = "extraControlsCard";
-      card.className = "card";
-      card.style.marginTop = "12px";
-      card.innerHTML = `
-        <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">THEME PRESETS + DATA SAVER</div>
-        <div class="row">
-          <button id="presetNeonBtn" class="primary" type="button">Preset: Neon</button>
-          <button id="presetEmeraldBtn" class="primary" type="button">Preset: Emerald</button>
-          <button id="presetMonoBtn" class="primary" type="button">Preset: Mono</button>
-          <button id="presetClearBtn" type="button">Clear Preset</button>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <button id="dataSaverOnBtn" class="good" type="button">Data Saver: ON</button>
-          <button id="dataSaverOffBtn" class="danger" type="button">Data Saver: OFF</button>
-        </div>
-      `;
-      const controls = document.getElementById("classControlsCard");
-      if (controls && controls.parentElement) controls.parentElement.insertBefore(card, controls.nextSibling);
-      else screen.insertBefore(card, screen.firstChild);
-    })();
-
     wireControls();
+    wireExtraControlsHotfix($, commandsDoc, currentClassId, setStatus);
+    wireBulkPending();
     wirePending();
     wireBanned();
     wireAnnouncements();
@@ -224,6 +200,71 @@ document.addEventListener("DOMContentLoaded", () => {
           forceRulesAt: firebase.firestore.FieldValue.delete(),
         }, { merge: true });
         setStatus("✅ Commands reset.", "ok");
+      } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
+    };
+
+    const pinRef = pinnedDoc(currentClassId);
+    $("setPinBtn").onclick = async () => {
+      const text = ($("pinMessageInput").value || "").trim();
+      setStatus("Setting pinned…", "warn");
+      try {
+        await pinRef.set({ text: text || "(no message)", updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        setStatus("✅ Pinned message set.", "ok");
+      } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
+    };
+    $("clearPinBtn").onclick = async () => {
+      setStatus("Clearing pinned…", "warn");
+      try {
+        await pinRef.set({ text: "", updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        $("pinMessageInput").value = "";
+        setStatus("✅ Pinned cleared.", "ok");
+      } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
+    };
+
+    $("exportChatBtn").onclick = async () => {
+      setStatus("Exporting chat…", "warn");
+      try {
+        const snap = await messagesCol(currentClassId).orderBy("timestamp", "asc").limit(500).get();
+        const lines = [];
+        snap.forEach((d) => {
+          const m = d.data() || {};
+          const t = m.timestamp && m.timestamp.toDate ? m.timestamp.toDate().toISOString() : "";
+          lines.push("[" + t + "] " + (m.name || "User") + ": " + (m.text || ""));
+        });
+        const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "securetext-admin-export-" + currentClassId + ".txt";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 200);
+        setStatus("✅ Exported " + snap.size + " messages.", "ok");
+      } catch (e) { console.error(e); setStatus("Export failed.", "bad"); }
+    };
+  }
+
+  function wireBulkPending() {
+    $("bulkApproveBtn").onclick = async () => {
+      if (!currentClassId) return;
+      if (!confirm("Approve ALL pending users?")) return;
+      setStatus("Approving all…", "warn");
+      try {
+        const snap = await pendingCol(currentClassId).where("status", "==", "pending").get();
+        const batch = db.batch();
+        snap.forEach((d) => batch.set(d.ref, { status: "approved", updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }));
+        await batch.commit();
+        setStatus("✅ Approved " + snap.size + " users.", "ok");
+      } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
+    };
+    $("bulkRejectBtn").onclick = async () => {
+      if (!currentClassId) return;
+      if (!confirm("Reject ALL pending users?")) return;
+      setStatus("Rejecting all…", "warn");
+      try {
+        const snap = await pendingCol(currentClassId).where("status", "==", "pending").get();
+        const batch = db.batch();
+        snap.forEach((d) => batch.set(d.ref, { status: "rejected", updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }));
+        await batch.commit();
+        setStatus("✅ Rejected " + snap.size + " users.", "ok");
       } catch (e) { console.error(e); setStatus("Failed.", "bad"); }
     };
   }

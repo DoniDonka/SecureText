@@ -1,0 +1,9 @@
+{
+  "name": "SecureText",
+  "short_name": "SecureText",
+  "description": "Class chat with PIN, approval, and admin controls",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#070a0f",
+  "theme_color": "#070a0f"
+}

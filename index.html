@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="SecureText — class chat with PIN, approval, and admin controls. Firestore + GitHub Pages." />
+  <meta name="theme-color" content="#070a0f" />
   <title>SecureText</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.json" />
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
@@ -102,8 +105,9 @@
                 <div id="onlineBadge" class="muted" style="margin-top:6px">• 0 online</div>
               </div>
               <div class="chat-controls">
-                <button id="settingsBtn" type="button">⚙️</button>
-                <button id="themeToggle" type="button">🌙</button>
+                <button id="searchToggleBtn" type="button" title="Search &amp; export">🔍</button>
+                <button id="settingsBtn" type="button" title="Settings">⚙️</button>
+                <button id="themeToggle" type="button" title="Theme">🌙</button>
                 <button id="logoutBtn" class="danger" type="button">Logout</button>
               </div>
             </div>
@@ -111,6 +115,14 @@
             <div style="margin-top:10px" class="card">
               <strong>Announcements</strong>
               <div id="announcementsList" style="margin-top:8px"></div>
+            </div>
+
+            <div id="pinnedMessageBox" class="card st-pinned hidden" style="margin-top:10px"></div>
+
+            <div id="chatSearchWrap" class="row" style="margin-top:10px;display:none">
+              <input id="chatSearchInput" type="text" placeholder="Search messages…" />
+              <button id="chatSearchClear" type="button">Clear</button>
+              <button id="chatExportBtn" type="button">Export chat</button>
             </div>
 
             <div id="chatStatus" class="muted" style="margin-top:10px"></div>
@@ -137,7 +149,9 @@
     </section>
   </div>
 
+  <div id="stOfflineBanner" class="st-offline-banner hidden" aria-live="polite">You're offline. Messages will sync when back online.</div>
   <script src="firebase.js"></script>
+  <script src="st-helpers.js"></script>
   <script src="app.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {

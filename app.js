@@ -41,8 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbtn = document.getElementById("themeToggle");
     if (tbtn) tbtn.textContent = mode === "day" ? "☀️" : "🌙";
   }
-    const t=$("themeToggle"); if(t) t.textContent = mode==="day"?"☀️":"🌙";
-  }
   function applyPreset(p){
     document.body.classList.remove("preset-neon","preset-emerald","preset-mono");
     if(p==="neon") document.body.classList.add("preset-neon");
@@ -90,15 +88,16 @@ document.addEventListener("DOMContentLoaded", () => {
     new Notification(`📚 SecureText | ${className}`, { body: `${from}: ${body}` });
   }
 
-  // firestore helpers
-  const classDoc=(cid)=>db.collection("classes").doc(cid);
-  const pendingDoc=(cid,uid)=>classDoc(cid).collection("pendingUsers").doc(uid);
-  const bannedDoc=(cid,uid)=>classDoc(cid).collection("bannedUsers").doc(uid);
-  const messagesCol=(cid)=>classDoc(cid).collection("messages");
-  const annCol=(cid)=>classDoc(cid).collection("announcements");
-  const typingDoc=(cid)=>classDoc(cid).collection("meta").doc("typing");
-  const presenceDoc=(cid)=>classDoc(cid).collection("meta").doc("presence");
-  const commandsDoc=(cid)=>classDoc(cid).collection("meta").doc("commands");
+  // firestore helpers (can use window.ST_REFS if available)
+  const classDoc=(cid)=>(window.ST_REFS?window.ST_REFS.classDoc(cid):db.collection("classes").doc(cid));
+  const pendingDoc=(cid,uid)=>(window.ST_REFS?window.ST_REFS.pendingDoc(cid,uid):classDoc(cid).collection("pendingUsers").doc(uid));
+  const bannedDoc=(cid,uid)=>(window.ST_REFS?window.ST_REFS.bannedDoc(cid,uid):classDoc(cid).collection("bannedUsers").doc(uid));
+  const messagesCol=(cid)=>(window.ST_REFS?window.ST_REFS.messagesCol(cid):classDoc(cid).collection("messages"));
+  const annCol=(cid)=>(window.ST_REFS?window.ST_REFS.announcementsCol(cid):classDoc(cid).collection("announcements"));
+  const typingDoc=(cid)=>(window.ST_REFS?window.ST_REFS.typingDoc(cid):classDoc(cid).collection("meta").doc("typing"));
+  const presenceDoc=(cid)=>(window.ST_REFS?window.ST_REFS.presenceDoc(cid):classDoc(cid).collection("meta").doc("presence"));
+  const commandsDoc=(cid)=>(window.ST_REFS?window.ST_REFS.commandsDoc(cid):classDoc(cid).collection("meta").doc("commands"));
+  const pinnedDoc=(cid)=>(window.ST_REFS?window.ST_REFS.pinnedDoc(cid):classDoc(cid).collection("meta").doc("pinned"));
 
   // state
   let selectedClassId=null, selectedClassName=null;
@@ -363,6 +362,58 @@ document.addEventListener("DOMContentLoaded", () => {
     $("chatWelcome").textContent=`Welcome, ${uname}!`;
     $("chatSubtitle").textContent=`SecureText chat | ${selectedClassName||cid}`;
     ensureReplyUI();
+
+    // Offline banner
+    const offlineBanner=$("stOfflineBanner");
+    function setOffline(off){ if(offlineBanner){ offlineBanner.classList.toggle("hidden",!off); offlineBanner.classList.add("on"); } }
+    function setOnline(){ if(offlineBanner){ offlineBanner.classList.add("hidden"); offlineBanner.classList.remove("on"); } }
+    window.addEventListener("online",setOnline);
+    window.addEventListener("offline",()=>setOffline(true));
+    if(!navigator.onLine) setOffline(true);
+    chatUnsubs.push(()=>{ window.removeEventListener("online",setOnline); window.removeEventListener("offline",()=>setOffline(true)); });
+
+    // Pinned message
+    const pinnedBox=$("pinnedMessageBox");
+    chatUnsubs.push(pinnedDoc(cid).onSnapshot(doc=>{
+      if(!pinnedBox) return;
+      const d=doc?.data?.()||{};
+      const text=String(d.text||"").trim();
+      if(!text){ pinnedBox.classList.add("hidden"); pinnedBox.innerHTML=""; return; }
+      pinnedBox.classList.remove("hidden");
+      pinnedBox.innerHTML=`<div class="st-pinned-label">📌 Pinned</div><div class="st-pinned-text">${escapeHtml(text)}</div>`;
+    }));
+
+    // Search & export toolbar
+    const searchWrap=$("chatSearchWrap"); const searchInput=$("chatSearchInput"); const searchClear=$("chatSearchClear"); const exportBtn=$("chatExportBtn"); const searchToggleBtn=$("searchToggleBtn");
+    if(searchToggleBtn) searchToggleBtn.onclick=()=>{ if(searchWrap){ searchWrap.style.display=searchWrap.style.display==="none"?"flex":"none"; if(searchWrap.style.display==="flex") searchInput&&searchInput.focus(); } };
+    if(searchClear) searchClear.onclick=()=>{ if(searchInput){ searchInput.value=""; filterMessagesBySearch(""); } };
+    function filterMessagesBySearch(q){
+      const list=$("messages"); if(!list) return;
+      const msgs=list.querySelectorAll(".msg");
+      q=String(q||"").toLowerCase().trim();
+      msgs.forEach(el=>{
+        const text=(el.querySelector(".msg-text")?.textContent||"").toLowerCase();
+        const name=(el.querySelector(".msg-top strong")?.textContent||"").toLowerCase();
+        const show=!q || text.includes(q) || name.includes(q);
+        el.style.display=show?"":"none";
+      });
+    }
+    if(searchInput) searchInput.addEventListener("input",()=>filterMessagesBySearch(searchInput.value));
+    if(exportBtn) exportBtn.onclick=()=>{
+      const list=$("messages"); if(!list) return;
+      const items=[];
+      list.querySelectorAll(".msg").forEach(el=>{
+        if(el.style.display==="none") return;
+        const name=el.querySelector(".msg-top strong")?.textContent||"User";
+        const text=el.querySelector(".msg-text")?.textContent||"";
+        const time=el.querySelector(".msg-top .muted")?.textContent||"";
+        items.push({name,text,timestamp:time});
+      });
+      const txt=items.map(m=>`[${m.timestamp}] ${m.name}: ${m.text}`).join("\n");
+      const blob=new Blob([txt],{type:"text/plain;charset=utf-8"});
+      if(window.ST_HELPERS&&window.ST_HELPERS.downloadBlob) window.ST_HELPERS.downloadBlob(blob,"securetext-chat-export.txt");
+      else { const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="securetext-chat-export.txt"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),200); }
+    };
 
     $("settingsBtn").onclick=()=>{ // minimal settings: theme/sound/@here
       const ov=document.getElementById("stSettingsOverlay")||document.createElement("div");

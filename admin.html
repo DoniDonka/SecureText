@@ -71,10 +71,15 @@
               <button id="deleteAllChatBtn" class="danger" type="button">Delete ALL Chat</button>
               <button id="deleteAllAnnouncementsBtn" class="danger" type="button">Delete ALL Announcements</button>
               <button id="resetCommandsBtn" class="danger" type="button">Reset Commands</button>
+              <button id="exportChatBtn" class="primary" type="button">Export Chat</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="pinMessageInput" placeholder="Pinned message (shown at top of chat)…" style="flex:1;min-width:200px" />
+              <button id="setPinBtn" class="primary" type="button">Set pinned</button>
+              <button id="clearPinBtn" type="button">Clear pinned</button>
             </div>
           </div>
 
-          
           <div id="extraControlsCard" class="card" style="margin-top:12px">
             <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">THEME PRESETS + DATA SAVER</div>
             <div class="row">
@@ -90,6 +95,10 @@
           </div>
 
           <h3 style="margin-top:14px">Pending Users</h3>
+          <div class="row" style="margin-bottom:8px">
+            <button id="bulkApproveBtn" class="good" type="button">Approve all</button>
+            <button id="bulkRejectBtn" class="danger" type="button">Reject all</button>
+          </div>
           <table id="pendingUsersTable" style="width:100%; border-collapse:collapse; margin-top:8px">
             <thead>
               <tr>
