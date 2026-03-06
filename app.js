@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // local settings
   const SETTINGS_KEY="st_settings_v6";
-  const DEFAULTS={theme:"night", sound:true, here:true};
+  const DEFAULTS={theme:"night", sound:true, here:true, fontSize:"medium"};
   function getSettings(){ try{ return {...DEFAULTS, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}")||{})}; }catch{return {...DEFAULTS};} }
   function setSettings(s){ try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch{} }
   let settings=getSettings();
@@ -48,6 +48,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.add(resolved === "day" ? "theme-day" : "theme-night");
     const tbtn = document.getElementById("themeToggle");
     if (tbtn) tbtn.textContent = resolved === "day" ? "☀️" : "🌙";
+    const fs = settings.fontSize || "medium";
+    document.body.classList.remove("font-small","font-medium","font-large");
+    document.body.classList.add("font-" + (fs === "small" ? "small" : fs === "large" ? "large" : "medium"));
   }
   function applyPreset(p){
     document.body.classList.remove("preset-neon","preset-emerald","preset-mono");
@@ -144,7 +147,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const ref=presenceDoc(cid);
     const intervalMs = window.__st_dataSaver ? 120000 : 90000;
     const beat=async()=>{ if(document.hidden) return; try{ await ref.set({[uid]: firebase.firestore.FieldValue.serverTimestamp()},{merge:true}); }catch{} };
-    beat(); presenceTimer=setInterval(beat, intervalMs);
+    function startInterval(){ beat(); presenceTimer=setInterval(beat, intervalMs); }
+    startInterval();
+    const visHandler=()=>{
+      if(document.hidden){ if(presenceTimer){ clearInterval(presenceTimer); presenceTimer=null; } }
+      else startInterval();
+    };
+    document.addEventListener("visibilitychange",visHandler);
+    chatUnsubs.push(()=>document.removeEventListener("visibilitychange",visHandler));
     const TTL = intervalMs + 35000;
     const unsub=ref.onSnapshot(doc=>{
       if(window.__st_connUpdate) window.__st_connUpdate();
@@ -285,7 +295,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function msgEl(id,m,me){
     const w=document.createElement("div"); w.className="msg"; w.dataset.id=id; w.dataset.userid=m.userId||"";
     const timeStr=fmtTime(m.timestamp); const timeFull=fmtTimeFull(m.timestamp);
-    w.innerHTML=`<div class="msg-top"><strong>${escapeHtml(m.name||"User")}</strong> <span class="muted msg-time" title="${escapeHtml(timeFull)}">${timeStr}</span></div>`;
+    w.innerHTML=`<div class="msg-top"><strong>${escapeHtml(m.name||"User")}</strong> <span class="muted msg-time" title="${escapeHtml(timeFull)}">${timeStr}</span><span class="msg-sent-check"></span></div>`;
     const body=document.createElement("div"); body.className="msg-text";
     const del=!!m.deleted || String(m.text||"").trim().toLowerCase()==="(deleted)";
     const textDisplay=del?"(deleted)":(m.text||"");
@@ -313,6 +323,10 @@ document.addEventListener("DOMContentLoaded", () => {
         rx.appendChild(b);
       });
       w.appendChild(rx);
+    }
+    if(!del && m.userId===me && id===window.__st_pendingSentId){
+      const check=w.querySelector(".msg-sent-check"); if(check){ check.textContent=" ✓"; check.classList.add("visible"); }
+      window.__st_pendingSentId=null;
     }
     return w;
   }
@@ -496,7 +510,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if(!text){ pinnedBox.classList.add("hidden"); pinnedBox.innerHTML=""; return; }
       pinnedBox.classList.remove("hidden");
       const by=d.name?` — ${escapeHtml(d.name)}`:"";
-      pinnedBox.innerHTML=`<div class="st-pinned-label">📌 Pinned${by}</div><div class="st-pinned-text">${escapeHtml(text)}</div>`;
+      const mid=d.messageId;
+      const jumpLink=mid ? `<div style="margin-top:8px"><button type="button" class="msg-btn st-jump-to-msg" data-mid="${escapeHtml(mid)}">Jump to message</button></div>` : "";
+      pinnedBox.innerHTML=`<div class="st-pinned-label">📌 Pinned${by}</div><div class="st-pinned-text">${escapeHtml(text)}</div>${jumpLink}`;
+      pinnedBox.querySelector(".st-jump-to-msg")?.addEventListener("click",()=>{
+        const el=document.getElementById("msg_"+mid) || document.querySelector(".msg[data-id=\""+mid+"\"]");
+        if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.classList.add("msg-highlight"); setTimeout(()=>el.classList.remove("msg-highlight"),2500); }
+      });
     }));
 
     // Search & export toolbar
@@ -539,23 +559,38 @@ document.addEventListener("DOMContentLoaded", () => {
         ov.innerHTML=`<div class="st-modal"><div class="st-modal-top"><div class="st-modal-title">Settings</div><button id="stClose" class="st-icon-btn" type="button">✕</button></div>
           <div class="st-modal-body">
             <div class="st-setting-row"><div><div class="st-setting-name">Theme</div><div class="st-setting-desc">Day / Night / System</div></div><select id="stThemeSelect"><option value="night">🌙 Night</option><option value="day">☀️ Day</option><option value="system">📱 System</option></select></div>
+            <div class="st-setting-row"><div><div class="st-setting-name">Font size</div><div class="st-setting-desc">Chat text size</div></div><select id="stFontSelect"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></div>
             <div class="st-setting-row"><div><div class="st-setting-name">Sounds</div><div class="st-setting-desc">Send / receive / alerts</div></div><button id="stSound" class="st-pill-btn" type="button"></button></div>
             <div class="st-setting-row"><div><div class="st-setting-name">@here alerts</div><div class="st-setting-desc">Flash + notify</div></div><button id="stHere" class="st-pill-btn" type="button"></button></div>
+            <div class="st-setting-row"><button id="stWhatsNewBtn" type="button" class="msg-btn">What&apos;s new</button></div>
           </div></div>`;
         document.body.appendChild(ov);
         ov.addEventListener("click",(e)=>{ if(e.target===ov) ov.classList.remove("on"); });
       }
       const render=()=>{
         const sel=$("stThemeSelect"); if(sel) sel.value=settings.theme||"night";
+        const fs=$("stFontSelect"); if(fs) fs.value=settings.fontSize||"medium";
         $("stSound").textContent = settings.sound?"🔊 On":"🔇 Off";
         $("stHere").textContent = settings.here?"On":"Off";
       };
       render();
       $("stClose").onclick=()=>ov.classList.remove("on");
       const themeSel=$("stThemeSelect"); if(themeSel) themeSel.onchange=()=>{ settings.theme=themeSel.value; setSettings(settings); applyTheme(settings.theme); render(); };
+      const fontSel=$("stFontSelect"); if(fontSel) fontSel.onchange=()=>{ settings.fontSize=fontSel.value; setSettings(settings); document.body.classList.remove("font-small","font-medium","font-large"); document.body.classList.add("font-"+(settings.fontSize==="small"?"small":settings.fontSize==="large"?"large":"medium")); render(); };
       try{ const q=window.matchMedia("(prefers-color-scheme: light)"); q.addEventListener("change",()=>{ if(settings.theme==="system") applyTheme("system"); }); }catch{}
       $("stSound").onclick=()=>{ settings.sound=!settings.sound; setSettings(settings); render(); };
       $("stHere").onclick=()=>{ settings.here=!settings.here; setSettings(settings); render(); };
+      $("stWhatsNewBtn").onclick=()=>{
+        const wov=document.getElementById("stWhatsNewOverlay")||document.createElement("div");
+        if(!wov.id){
+          wov.id="stWhatsNewOverlay"; wov.className="st-overlay";
+          wov.innerHTML=`<div class="st-modal"><div class="st-modal-top"><div class="st-modal-title">What&apos;s new</div><button type="button" class="st-icon-btn st-whatsnew-close">✕</button></div><div class="st-modal-body st-whatsnew-body"><p>Polls and check-in — you can run quick polls and check-ins from the admin panel. Students see them in chat.</p><p>Report reasons — when reporting a message, you pick Spam, Off-topic, Unkind, or Other so admins have more context.</p><p>Unread line and jump to message — load older messages and you'll see where unread starts; pinned messages can have a Jump to message link.</p><p>Announcements collapse and load more — collapse the block to save space; new ones open it again. First few show by default, then Load more.</p><p>Font size and sent checkmark — change chat text size in settings; your sent messages get a small check when they're saved.</p><p>Draft and retry — your message is saved locally while you type. If send fails, tap Send again to retry.</p></div></div>`;
+          document.body.appendChild(wov);
+          wov.querySelector(".st-whatsnew-close").onclick=()=>wov.classList.remove("on");
+          wov.addEventListener("click",e=>{ if(e.target===wov) wov.classList.remove("on"); });
+        }
+        wov.classList.add("on");
+      };
       ov.classList.add("on");
     };
 
@@ -659,18 +694,49 @@ document.addEventListener("DOMContentLoaded", () => {
     startPresence(cid,uid);
     chatUnsubs.push(typingDoc(cid).onSnapshot(doc=>renderTyping(doc?.data()||{}, uid)));
 
-    // announcements ping
-    chatUnsubs.push(annCol(cid).orderBy("timestamp","asc").limit(15).onSnapshot(snap=>{
+    // announcements: collapse, new opens, load more (show 5 then reveal), New badge
+    const ANNOUNCE_VISIBLE=5;
+    const announcementsCard=$("announcementsCard"); const announcementsBody=$("announcementsBody"); const announcementsTitle=$("announcementsTitle"); const announcementsChevron=$("announcementsChevron"); const announcementsLoadMore=$("announcementsLoadMore");
+    let announcementsExpanded=true; let announcementsAllDocs=[];
+    const lastSeenKey=()=>"st_announce_seen_"+cid;
+    if(announcementsCard){
+      announcementsCard.querySelector(".st-announcements-header")?.addEventListener("click",()=>{
+        announcementsExpanded=!announcementsExpanded;
+        announcementsBody.style.display=announcementsExpanded?"block":"none";
+        announcementsChevron.textContent=announcementsExpanded?"▼":"▶";
+      });
+    }
+    if(announcementsLoadMore) announcementsLoadMore.onclick=()=>{
       const list=$("announcementsList"); if(!list) return;
+      list.querySelectorAll(".st-announce-row").forEach((r,i)=>{ r.classList.remove("hidden"); });
+      announcementsLoadMore.classList.add("hidden");
+    };
+    chatUnsubs.push(annCol(cid).orderBy("timestamp","asc").limit(10).onSnapshot(snap=>{
+      const list=$("announcementsList"); if(!list) return;
+      announcementsAllDocs=snap.docs;
+      const lastSeen=localStorage.getItem(lastSeenKey())||"";
       list.innerHTML="";
-      snap.forEach(d=>{
+      snap.forEach((d,i)=>{
         const a=d.data()||{};
+        const isNew=d.id!==lastSeen && i===snap.size-1;
         const row=document.createElement("div");
+        row.className="st-announce-row"+(i>=ANNOUNCE_VISIBLE?" hidden":"");
         row.style.cssText="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)";
-        row.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px"><strong>${escapeHtml(a.by||"Admin")}</strong><span class="muted">${fmtTime(a.timestamp)}</span></div><div style="margin-top:6px;white-space:pre-wrap">${escapeHtml(a.text||"")}</div>`;
+        row.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><strong>${escapeHtml(a.by||"Admin")}</strong><span class="muted">${fmtTime(a.timestamp)}</span>${isNew?' <span class="st-new-badge">New</span>':""}</div><div style="margin-top:6px;white-space:pre-wrap">${escapeHtml(a.text||"")}</div>`;
         list.appendChild(row);
       });
-      snap.docChanges().forEach(ch=>{ if(ch.type==="added"){ const a=ch.doc.data()||{}; stFlash(); playSound("announcement"); stConfetti({count:35,duration:2200}); maybeNotify(selectedClassName||cid, "Announcement", String(a.text||"")); const card=document.getElementById("announcementsCard"); if(card){ card.classList.remove("pulse"); void card.offsetWidth; card.classList.add("pulse"); setTimeout(()=>card.classList.remove("pulse"),800); } } });
+      if(announcementsTitle) announcementsTitle.textContent="Announcements"+(snap.size?" ("+snap.size+")":"");
+      if(announcementsLoadMore){ const extra=Math.max(0,snap.size-ANNOUNCE_VISIBLE); announcementsLoadMore.classList.toggle("hidden",extra===0); announcementsLoadMore.textContent="Load more"+(extra?" ("+extra+")":""); }
+      snap.docChanges().forEach(ch=>{
+        if(ch.type==="added"){
+          const a=ch.doc.data()||{};
+          stFlash(); playSound("announcement"); stConfetti({count:35,duration:2200});
+          maybeNotify(selectedClassName||cid, "Announcement", String(a.text||""));
+          const card=document.getElementById("announcementsCard");
+          if(card){ card.classList.remove("pulse"); void card.offsetWidth; card.classList.add("pulse"); setTimeout(()=>card.classList.remove("pulse"),800); card.classList.remove("st-announcements-collapsed"); if(announcementsBody) announcementsBody.style.display="block"; announcementsExpanded=true; if(announcementsChevron) announcementsChevron.textContent="▼"; }
+        }
+      });
+      if(announcementsExpanded && snap.size>0) setTimeout(()=>{ try{ localStorage.setItem(lastSeenKey(),snap.docs[snap.docs.length-1].id); }catch{} },3000);
     }));
 
     // Check-in (admin starts; students see "I'm here")
@@ -696,13 +762,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if(!q||!Array.isArray(opts)||!opts.length){ pollCard.classList.add("hidden"); return; }
       pollCard.classList.remove("hidden");
       pollQuestion.textContent=q;
-      const votes=d.votes||{}; const myVote=votes[uid];
+      const votes=d.votes||{}; const myVote=votes[uid]; const allowChange=!!d.allowChangeVote;
       pollOptions.innerHTML="";
       opts.forEach(opt=>{
         const btn=document.createElement("button"); btn.type="button"; btn.className="msg-btn"; btn.textContent=opt;
-        const count=Object.values(votes).filter(v=>v===opt).length;
         if(myVote===opt) btn.classList.add("active");
-        btn.onclick=async()=>{ if(myVote) return; try{ await activePollDoc(cid).update({[`votes.${uid}`]:opt}); }catch{} };
+        btn.onclick=async()=>{ if(myVote&&!allowChange) return; try{ await activePollDoc(cid).update({[`votes.${uid}`]:opt}); }catch{} };
         pollOptions.appendChild(btn);
       });
       const totals=opts.map(o=>{ const c=Object.values(votes).filter(v=>v===o).length; return `${o}: ${c}`; }).join("  ·  ");
@@ -717,6 +782,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const loadOlderInfo=$("loadOlderInfo");
     let oldest=null;
     if(messages){ messages.innerHTML=Array(5).fill(0).map(()=>'<div class="st-skeleton st-skeleton-msg"></div>').join(""); }
+    try{ const draft=localStorage.getItem("st_draft_"+cid); if(draft&&input) input.value=draft; }catch{}
+    let draftSaveTimer=null;
+    input.addEventListener("input",()=>{
+      if(draftSaveTimer) clearTimeout(draftSaveTimer);
+      draftSaveTimer=setTimeout(()=>{ try{ localStorage.setItem("st_draft_"+cid,input.value||""); }catch{} draftSaveTimer=null; },2000);
+    });
+    const lastReadKey=()=>"st_lastRead_"+cid;
+    function setLastReadToBottom(){ const lastMsg=[...messages.querySelectorAll(".msg")].pop(); if(lastMsg){ try{ localStorage.setItem(lastReadKey(),lastMsg.dataset.id||""); }catch{} } ensureUnreadDivider(); }
+    function ensureUnreadDivider(){
+      const existing=messages.querySelector(".st-unread-divider"); if(existing) existing.remove();
+      try{ var lid=localStorage.getItem(lastReadKey()); }catch{ return; }
+      if(!lid) return;
+      const after=messages.querySelector(".msg[data-id=\""+lid+"\"]"); if(!after) return;
+      const div=document.createElement("div"); div.className="st-unread-divider"; div.setAttribute("aria-hidden","true"); div.textContent="——— Unread ———";
+      messages.insertBefore(div,after.nextSibling);
+    }
 
     // enter-to-send + typing (Enter or Ctrl+Enter)
     input.addEventListener("keydown",(e)=>{ if((e.key==="Enter"&&!e.shiftKey)||(e.key==="Enter"&&(e.ctrlKey||e.metaKey))){ e.preventDefault(); send.click(); } });
@@ -752,11 +833,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       send.disabled=true;
       try{
-        await messagesCol(cid).add({userId:uid, name:uname, text, replyTo:null, timestamp: firebase.firestore.FieldValue.serverTimestamp()});
+        const ref=await messagesCol(cid).add({userId:uid, name:uname, text, replyTo:null, timestamp: firebase.firestore.FieldValue.serverTimestamp()});
+        window.__st_pendingSentId=ref.id;
         input.value=""; setTyping(cid,uid,false); playSound("send");
         lastSendAt=now; lastSendText=text; recent.push({t:text,at:now});
         stConfetti({count:12,duration:1200});
-      }catch(e){ console.error(e); status("Failed to send.","bad"); }
+        try{ localStorage.removeItem("st_draft_"+cid); }catch{}
+      }catch(e){ console.error(e); status("Failed to send. Tap Send again to retry.","bad"); }
       finally{ send.disabled=false; }
     };
 
@@ -786,11 +869,25 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       if(btn.dataset.action==="report"){
-        try{
-          const text=msg.querySelector(".msg-text")?.textContent||"";
-          await reportsCol(cid).add({messageId:mid,messageText:text.slice(0,200),reportedBy:uid,reportedByName:uname,timestamp:firebase.firestore.FieldValue.serverTimestamp()});
-          status("Report submitted. Admin will review.","ok");
-        }catch(err){ console.error(err); status("Failed to report.","bad"); }
+        const messageText=(msg.querySelector(".msg-text")?.textContent||"").slice(0,200);
+        const reportReasons=["Spam","Off-topic","Unkind","Other"];
+        const ov=document.createElement("div"); ov.className="st-overlay on"; ov.innerHTML=`<div class="st-modal"><div class="st-modal-top"><div class="st-modal-title">Why are you reporting?</div><button type="button" class="st-icon-btn st-report-close">✕</button></div><div class="st-modal-body"><div class="st-report-options"></div><div id="stReportOtherWrap" class="hidden" style="margin-top:10px"><input id="stReportOtherInput" type="text" placeholder="Please specify…" /></div><button type="button" id="stReportSubmit" class="primary" style="margin-top:12px">Submit report</button></div></div>`;
+        const opts=ov.querySelector(".st-report-options");
+        reportReasons.forEach(r=>{ const lb=document.createElement("label"); lb.style.display="block"; lb.style.marginBottom="8px"; lb.innerHTML=`<input type="radio" name="reportReason" value="${escapeHtml(r)}" /> ${escapeHtml(r)}`; opts.appendChild(lb); });
+        const otherWrap=ov.querySelector("#stReportOtherWrap"); const otherInput=ov.querySelector("#stReportOtherInput");
+        opts.querySelectorAll('input[name="reportReason"]').forEach(radio=>{ radio.onchange=()=>{ otherWrap.classList.toggle("hidden",radio.value!=="Other"); }; });
+        document.body.appendChild(ov);
+        ov.querySelector(".st-report-close").onclick=()=>ov.remove();
+        ov.querySelector("#stReportSubmit").onclick=async()=>{
+          const chosen=ov.querySelector('input[name="reportReason"]:checked');
+          const reason=chosen?chosen.value:"Other";
+          const otherReason=(reason==="Other"?(otherInput.value||"").trim():"");
+          try{
+            await reportsCol(cid).add({messageId:mid,messageText,reportedBy:uid,reportedByName:uname,reason,otherReason,timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+            status("Report submitted. Admin will review.","ok");
+          }catch(err){ console.error(err); status("Failed to report.","bad"); }
+          ov.remove();
+        };
         return;
       }
       if(btn.dataset.action==="edit"){
@@ -871,10 +968,14 @@ document.addEventListener("DOMContentLoaded", () => {
         snap.forEach(d=>{
           const m=d.data()||{}; const el=msgEl(d.id,m,uid); el.id="msg_"+d.id; messages.appendChild(el);
         });
+        let empty=$("messagesEmptyState"); if(!empty){ empty=document.createElement("div"); empty.id="messagesEmptyState"; empty.className="st-empty-state"; empty.textContent="No messages yet. Say hi!"; messages.appendChild(empty); }
+        empty.classList.toggle("hidden",!snap.empty);
         messages.dataset.inited="1";
         oldest=snap.docs[0]||oldest;
         if(stick) messages.scrollTop=messages.scrollHeight;
+        if(stick) setLastReadToBottom();
         if(window.__st_connUpdate) window.__st_connUpdate();
+        ensureUnreadDivider();
         return;
       }
       snap.docChanges().forEach(ch=>{
@@ -882,12 +983,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const ex=document.getElementById(id);
         if(ch.type==="added"){
           const el=msgEl(d.id,m,uid); el.id=id; messages.appendChild(el);
+          $("messagesEmptyState")?.classList.add("hidden");
           if(stick) messages.scrollTop=messages.scrollHeight;
+          if(stick) setLastReadToBottom();
           if(m.userId && m.userId!==uid){ maybeNotify(selectedClassName||cid, m.name||"Someone", String(m.text||"")); playSound("receive"); }
         }else if(ch.type==="modified"){
           if(ex) updateMsgReactionsAndEdit(ex,m,uid);
         }else if(ch.type==="removed"){ if(ex) ex.remove(); }
       });
+      ensureUnreadDivider();
       if(snap.docChanges().length && window.__st_connUpdate) window.__st_connUpdate();
     }));
 
@@ -896,9 +1000,9 @@ document.addEventListener("DOMContentLoaded", () => {
     (function(){
       const btn=$("stScrollBtn"), unseenEl=$("stUnseen");
       let unseen=0;
-      const hide=()=>{ unseen=0; if(unseenEl) unseenEl.textContent="0"; if(btn) btn.classList.add("hidden"); document.title=defaultTitle; };
-      messages.addEventListener("scroll",()=>{ if(nearBottom()) hide(); }, {passive:true});
-      if(btn) btn.onclick=()=>{ messages.scrollTo({top:messages.scrollHeight,behavior:"smooth"}); hide(); };
+      const hide=()=>{ unseen=0; if(unseenEl) unseenEl.textContent="0"; if(btn) btn.classList.add("hidden"); document.title=defaultTitle; setLastReadToBottom(); };
+      messages.addEventListener("scroll",()=>{ if(nearBottom()){ hide(); setLastReadToBottom(); } }, {passive:true});
+      if(btn) btn.onclick=()=>{ messages.scrollTo({top:messages.scrollHeight,behavior:"smooth"}); hide(); setLastReadToBottom(); };
       window.addEventListener("focus",()=>{ if(nearBottom()) hide(); });
       const mo=new MutationObserver(muts=>{
         const isNear=nearBottom();

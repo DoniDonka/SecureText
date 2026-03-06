@@ -120,8 +120,14 @@
             </div>
 
             <div id="announcementsCard" style="margin-top:10px" class="card st-announcements-card">
-              <strong>Announcements</strong>
-              <div id="announcementsList" style="margin-top:8px"></div>
+              <div class="st-announcements-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer">
+                <strong id="announcementsTitle">Announcements</strong>
+                <span id="announcementsChevron" class="st-chevron">▼</span>
+              </div>
+              <div id="announcementsBody">
+                <div id="announcementsList" style="margin-top:8px"></div>
+                <button id="announcementsLoadMore" type="button" class="msg-btn st-load-more-ann hidden" style="margin-top:8px">Load more</button>
+              </div>
             </div>
 
             <div id="pinnedMessageBox" class="card st-pinned hidden" style="margin-top:10px"></div>
@@ -151,7 +157,9 @@
               <span id="loadOlderInfo" class="muted"></span>
             </div>
 
-            <div id="messages" class="messages"></div>
+            <div id="messages" class="messages">
+              <div id="messagesEmptyState" class="st-empty-state hidden">No messages yet. Say hi!</div>
+            </div>
 
             <div id="typingIndicator" style="margin-top:10px"></div>
 

@@ -270,12 +270,15 @@ document.addEventListener("DOMContentLoaded", () => {
       list.innerHTML = "";
       snap.forEach((doc) => {
         const r = doc.data() || {};
+        const mid = r.messageId || "";
         const div = document.createElement("div");
-        div.style.cssText = "padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:flex-start;gap:10px";
-        div.innerHTML = "<div><strong>" + (r.reportedByName || "?") + "</strong> reported message: \"" + (r.messageText || "").slice(0, 80) + "…\"</div>";
-        const btn = document.createElement("button"); btn.className = "msg-btn"; btn.textContent = "Dismiss";
-        btn.onclick = () => doc.ref.delete();
-        div.appendChild(btn);
+        div.style.cssText = "padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap";
+        div.innerHTML = "<div style=\"flex:1;min-width:0\"><strong>" + (r.reportedByName || "?") + "</strong> reported message: \"" + (r.messageText || "").slice(0, 80) + "…\"</div>";
+        const wrap = document.createElement("div");
+        const pinBtn = document.createElement("button"); pinBtn.className = "msg-btn primary"; pinBtn.textContent = "Pin"; pinBtn.onclick = async () => { try { await pinnedDoc(currentClassId).set({ messageId: mid, text: r.messageText || "", name: "Reported message", updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }); setStatus("Pinned.", "ok"); } catch (e) { setStatus("Failed.", "bad"); } };
+        const dismissBtn = document.createElement("button"); dismissBtn.className = "msg-btn"; dismissBtn.textContent = "Dismiss"; dismissBtn.onclick = () => doc.ref.delete();
+        wrap.appendChild(pinBtn); wrap.appendChild(dismissBtn);
+        div.appendChild(wrap);
         list.appendChild(div);
       });
       if (snap.empty) list.innerHTML = "<div class=\"muted\" style=\"padding:10px\">No reports.</div>";
@@ -324,9 +327,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const q = ($("pollQuestionInput").value || "").trim();
       const optsStr = ($("pollOptionsInput").value || "").trim();
       const opts = optsStr.split(/[,]+/).map((s) => s.trim()).filter(Boolean);
+      const allowChange = $("pollAllowChangeCheck") ? $("pollAllowChangeCheck").checked : false;
       if (!q || opts.length < 2) { setStatus("Enter question and at least 2 options.", "warn"); return; }
       try {
-        await activePollDoc(currentClassId).set({ question: q, options: opts, createdAt: Date.now(), votes: {} }, { merge: true });
+        await activePollDoc(currentClassId).set({ question: q, options: opts, allowChangeVote: !!allowChange, createdAt: Date.now(), votes: {} }, { merge: true });
         setStatus("✅ Poll created.", "ok");
       } catch (e) { setStatus("Failed.", "bad"); }
     };

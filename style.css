@@ -152,6 +152,20 @@ button:disabled{opacity:.55; cursor:not-allowed;}
 .st-poll-card.hidden{display:none;}
 .st-poll-question{font-weight:700;}
 .st-poll-card .msg-btn.active{background:rgba(80,140,255,.25);border-color:rgba(80,140,255,.4);}
+.msg-sent-check{opacity:0;margin-left:6px;font-size:0.9em;}
+.msg-sent-check.visible{opacity:1;}
+.st-unread-divider{text-align:center;padding:8px 0;color:var(--muted);font-size:0.85em;}
+.st-new-badge{background:rgba(80,140,255,.3);color:#fff;font-size:10px;padding:2px 6px;border-radius:999px;margin-left:6px;}
+.msg-highlight{animation:msgHighlight 2.5s ease-out;}
+@keyframes msgHighlight{0%{background:rgba(80,140,255,.25)}100%{background:transparent}}
+.font-small .messages,.font-small #chat-screen{font-size:0.9rem;}
+.font-large .messages,.font-large #chat-screen{font-size:1.15rem;}
+.st-announce-row.hidden{display:none;}
+.st-empty-state{text-align:center;padding:24px 16px;color:var(--muted);}
+.st-empty-state.hidden{display:none;}
+.st-whatsnew-body p{margin-bottom:12px;line-height:1.45;}
+.st-report-options label{display:block;margin-bottom:8px;}
+.st-report-options input[type="radio"]{margin-right:8px;}
 #chat-input{display:flex; gap:10px; margin-top:10px; align-items:center;}
 #chat-input input{flex:1;}
 .msg{padding:10px 0; border-bottom:1px solid rgba(255,255,255,.07);}
