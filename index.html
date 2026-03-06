@@ -119,12 +119,24 @@
               </div>
             </div>
 
-            <div style="margin-top:10px" class="card">
+            <div id="announcementsCard" style="margin-top:10px" class="card st-announcements-card">
               <strong>Announcements</strong>
               <div id="announcementsList" style="margin-top:8px"></div>
             </div>
 
             <div id="pinnedMessageBox" class="card st-pinned hidden" style="margin-top:10px"></div>
+
+            <div id="checkInBanner" class="card st-checkin-banner hidden" style="margin-top:10px">
+              <strong>Check-in</strong>
+              <p class="muted" style="margin:6px 0 10px 0">Tap below to check in.</p>
+              <button id="checkInBtn" type="button" class="primary">I'm here</button>
+            </div>
+
+            <div id="pollCard" class="card st-poll-card hidden" style="margin-top:10px">
+              <div id="pollQuestion" class="st-poll-question"></div>
+              <div id="pollOptions" class="row" style="margin-top:10px;flex-wrap:wrap"></div>
+              <div id="pollResults" class="muted" style="margin-top:10px;font-size:0.9em"></div>
+            </div>
 
             <div id="chatSearchWrap" class="row" style="margin-top:10px;display:none">
               <input id="chatSearchInput" type="text" placeholder="Search messages…" />

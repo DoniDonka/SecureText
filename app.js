@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if(p==="mono") document.body.classList.add("preset-mono");
   }
 
-  // sounds (simple)
+  // sounds (receive = new message, announcement = new announcement, approve = approved/alert)
   function playSound(type){
     if(!settings.sound) return;
     try{
@@ -64,8 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const o=ctx.createOscillator(); const g=ctx.createGain();
       o.connect(g); g.connect(ctx.destination);
       const now=ctx.currentTime;
-      const freq = type==="deny"?220 : type==="approve"?740 : type==="send"?620 : 520;
-      const dur = type==="approve"?0.10 : 0.07;
+      const freq = type==="deny"?220 : type==="approve"?740 : type==="send"?620 : type==="receive"?440 : type==="announcement"?880 : 520;
+      const dur = type==="approve"||type==="announcement"?0.10 : 0.07;
       o.frequency.setValueAtTime(freq, now);
       g.gain.setValueAtTime(0.0001, now);
       g.gain.exponentialRampToValueAtTime(0.08, now+0.01);
@@ -73,6 +73,25 @@ document.addEventListener("DOMContentLoaded", () => {
       o.start(now); o.stop(now+dur+0.02);
       o.onended=()=>{try{ctx.close();}catch{}};
     }catch{}
+  }
+
+  // confetti (lightweight, no lib)
+  function stConfetti(opts){
+    const count=opts?.count||40; const container=opts?.container||document.body; const duration=opts?.duration||2200;
+    const colors=["#508cff","#ff5a5a","#3cffa0","#ffd76b","#ff80c0"];
+    const frag=document.createDocumentFragment();
+    for(let i=0;i<count;i++){
+      const el=document.createElement("div");
+      el.style.cssText="position:fixed;width:10px;height:10px;border-radius:2px;pointer-events:none;z-index:999999;";
+      el.style.left=Math.random()*100+"vw"; el.style.top="-10px";
+      el.style.background=colors[Math.floor(Math.random()*colors.length)];
+      el.style.setProperty("--tx",(Math.random()-0.5)*200+"px");
+      el.style.setProperty("--rot",Math.random()*360+"deg");
+      el.style.animation=`stConfettiFall ${duration}ms ease-out forwards`;
+      frag.appendChild(el);
+      setTimeout(()=>el.remove(),duration);
+    }
+    container.appendChild(frag);
   }
 
   // notifications
@@ -106,6 +125,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const presenceDoc=(cid)=>(window.ST_REFS?window.ST_REFS.presenceDoc(cid):classDoc(cid).collection("meta").doc("presence"));
   const commandsDoc=(cid)=>(window.ST_REFS?window.ST_REFS.commandsDoc(cid):classDoc(cid).collection("meta").doc("commands"));
   const pinnedDoc=(cid)=>(window.ST_REFS?window.ST_REFS.pinnedDoc(cid):classDoc(cid).collection("meta").doc("pinned"));
+  const reportsCol=(cid)=>(window.ST_REFS?window.ST_REFS.reportsCol(cid):classDoc(cid).collection("reports"));
+  const checkInDoc=(cid)=>(window.ST_REFS?window.ST_REFS.checkInDoc(cid):classDoc(cid).collection("meta").doc("checkIn"));
+  const activePollDoc=(cid)=>(window.ST_REFS?window.ST_REFS.activePollDoc(cid):classDoc(cid).collection("meta").doc("activePoll"));
+  const moderationDoc=(cid)=>(window.ST_REFS?window.ST_REFS.moderationDoc(cid):classDoc(cid).collection("meta").doc("moderation"));
 
   // state
   let selectedClassId=null, selectedClassName=null;
@@ -176,6 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if(d.theme==="day"||d.theme==="night") handlers.onTheme?.(d.theme);
       if(d.preset==="neon"||d.preset==="emerald"||d.preset==="mono") handlers.onPreset?.(d.preset);
       if(typeof d.dataSaver==="boolean") handlers.onDataSaver?.(d.dataSaver);
+      if(d.slowMode!==undefined) handlers.onSlowMode?.(!!d.slowMode, d.slowModeSeconds);
     });
     chatUnsubs.push(unsub);
   }
@@ -244,6 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(ov);
     ov.querySelector("#rulesContinueBtn").onclick=()=>{
       setRules(cid,uid); requestNotifOnce();
+      stConfetti({count:50,duration:2500});
       ov.style.pointerEvents="none"; ov.style.opacity="0";
       setTimeout(()=>{try{ov.remove();}catch{}},120);
       onContinue();
@@ -270,6 +295,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if(!del){
       const acts=document.createElement("div"); acts.className="msg-actions";
       const copyBtn=document.createElement("button"); copyBtn.className="msg-btn"; copyBtn.textContent="Copy"; copyBtn.dataset.action="copy"; acts.appendChild(copyBtn);
+      const reportBtn=document.createElement("button"); reportBtn.className="msg-btn"; reportBtn.textContent="Report"; reportBtn.dataset.action="report"; acts.appendChild(reportBtn);
       const r=document.createElement("button"); r.className="msg-btn"; r.textContent="Reply"; r.dataset.action="reply"; acts.appendChild(r);
       const tsMs=m.timestamp?.toDate?.()?.getTime?.()||0;
       const canEdit=m.userId===me && tsMs && (Date.now()-tsMs<EDIT_WINDOW_MS);
@@ -329,7 +355,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // classes load
   async function loadClasses(){
     const box=$("classes"); const err=$("classError");
-    if(err) err.textContent=""; if(box) box.textContent="Loading…";
+    if(err) err.textContent="";
+    if(box){ box.innerHTML=""; for(let i=0;i<4;i++){ const s=document.createElement("div"); s.className="st-skeleton st-skeleton-btn"; box.appendChild(s); } }
     try{
       const snap=await db.collection("classes").get();
       if(!box) return;
@@ -541,7 +568,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="st-modal-body">
             <p><strong>Shortcuts</strong></p>
             <ul class="st-help-list">
-              <li><kbd>Enter</kbd> Send message</li>
+              <li><kbd>Enter</kbd> or <kbd>Ctrl+Enter</kbd> Send message</li>
               <li><kbd>/</kbd> Focus search</li>
               <li><kbd>Esc</kbd> Close modal / panel</li>
             </ul>
@@ -608,8 +635,11 @@ document.addEventListener("DOMContentLoaded", () => {
     window.__st_isBanned=false;
     chatUnsubs.push(bannedDoc(cid,uid).onSnapshot(d=>{ window.__st_isBanned=!!d?.exists; }));
 
-    // commands
+    // commands + slow mode + moderation (bad words)
     window.__st_dataSaver=false;
+    window.__st_slowMode=false;
+    window.__st_slowModeSeconds=10;
+    window.__st_moderation={ filterEnabled: false, words: [] };
     startCommands(cid,{
       onLogout: doLogout,
       onRerules: ()=>{ localStorage.removeItem(rulesKey(cid,uid)); showRulesGate(cid,uid,uname,selectedClassName||cid, ()=>{}); },
@@ -618,7 +648,12 @@ document.addEventListener("DOMContentLoaded", () => {
       onTheme: (m)=>applyTheme(m),
       onPreset: (p)=>applyPreset(p),
       onDataSaver: (on)=>{ window.__st_dataSaver=!!on; },
+      onSlowMode: (enabled, sec)=>{ window.__st_slowMode=!!enabled; window.__st_slowModeSeconds=Math.max(5, Number(sec)||10); },
     });
+    chatUnsubs.push(moderationDoc(cid).onSnapshot(doc=>{
+      const d=doc?.data?.()||{};
+      window.__st_moderation={ filterEnabled: !!d.filterEnabled, words: Array.isArray(d.words)?d.words:(typeof d.words==="string"?d.words.split(/[\s,]+/).filter(Boolean):[]) };
+    }));
 
     // presence + typing listeners
     startPresence(cid,uid);
@@ -635,8 +670,45 @@ document.addEventListener("DOMContentLoaded", () => {
         row.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px"><strong>${escapeHtml(a.by||"Admin")}</strong><span class="muted">${fmtTime(a.timestamp)}</span></div><div style="margin-top:6px;white-space:pre-wrap">${escapeHtml(a.text||"")}</div>`;
         list.appendChild(row);
       });
-      snap.docChanges().forEach(ch=>{ if(ch.type==="added"){ const a=ch.doc.data()||{}; stFlash(); playSound("approve"); maybeNotify(selectedClassName||cid, "Announcement", String(a.text||"")); } });
+      snap.docChanges().forEach(ch=>{ if(ch.type==="added"){ const a=ch.doc.data()||{}; stFlash(); playSound("announcement"); stConfetti({count:35,duration:2200}); maybeNotify(selectedClassName||cid, "Announcement", String(a.text||"")); const card=document.getElementById("announcementsCard"); if(card){ card.classList.remove("pulse"); void card.offsetWidth; card.classList.add("pulse"); setTimeout(()=>card.classList.remove("pulse"),800); } } });
     }));
+
+    // Check-in (admin starts; students see "I'm here")
+    const checkInBanner=$("checkInBanner"); const checkInBtn=$("checkInBtn");
+    chatUnsubs.push(checkInDoc(cid).onSnapshot(doc=>{
+      if(!checkInBanner) return;
+      const d=doc?.data?.()||{};
+      if(!d.active){ checkInBanner.classList.add("hidden"); return; }
+      checkInBanner.classList.remove("hidden");
+      const already=d.checkIns&&d.checkIns[uid];
+      if(checkInBtn){ checkInBtn.textContent=already?"✓ Checked in":"I'm here"; checkInBtn.disabled=!!already; }
+    }));
+    if(checkInBtn) checkInBtn.onclick=async()=>{
+      try{ await checkInDoc(cid).update({[`checkIns.${uid}`]:firebase.firestore.FieldValue.serverTimestamp()}); status("Checked in!","ok"); }catch(e){ status("Failed.","bad"); }
+    };
+
+    // Poll (admin creates; students vote, see results)
+    const pollCard=$("pollCard"); const pollQuestion=$("pollQuestion"); const pollOptions=$("pollOptions"); const pollResults=$("pollResults");
+    chatUnsubs.push(activePollDoc(cid).onSnapshot(doc=>{
+      if(!pollCard||!pollQuestion||!pollOptions) return;
+      const d=doc?.data?.()||{};
+      const q=d.question; const opts=d.options;
+      if(!q||!Array.isArray(opts)||!opts.length){ pollCard.classList.add("hidden"); return; }
+      pollCard.classList.remove("hidden");
+      pollQuestion.textContent=q;
+      const votes=d.votes||{}; const myVote=votes[uid];
+      pollOptions.innerHTML="";
+      opts.forEach(opt=>{
+        const btn=document.createElement("button"); btn.type="button"; btn.className="msg-btn"; btn.textContent=opt;
+        const count=Object.values(votes).filter(v=>v===opt).length;
+        if(myVote===opt) btn.classList.add("active");
+        btn.onclick=async()=>{ if(myVote) return; try{ await activePollDoc(cid).update({[`votes.${uid}`]:opt}); }catch{} };
+        pollOptions.appendChild(btn);
+      });
+      const totals=opts.map(o=>{ const c=Object.values(votes).filter(v=>v===o).length; return `${o}: ${c}`; }).join("  ·  ");
+      if(pollResults) pollResults.textContent=totals||"No votes yet.";
+    }));
+    if(pollResults) pollResults.style.marginTop="10px";
 
     const messages=$("messages");
     const input=$("msgInput");
@@ -644,9 +716,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const loadOlderBtn=$("loadOlderBtn");
     const loadOlderInfo=$("loadOlderInfo");
     let oldest=null;
+    if(messages){ messages.innerHTML=Array(5).fill(0).map(()=>'<div class="st-skeleton st-skeleton-msg"></div>').join(""); }
 
-    // enter-to-send + typing
-    input.addEventListener("keydown",(e)=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); send.click();} });
+    // enter-to-send + typing (Enter or Ctrl+Enter)
+    input.addEventListener("keydown",(e)=>{ if((e.key==="Enter"&&!e.shiftKey)||(e.key==="Enter"&&(e.ctrlKey||e.metaKey))){ e.preventDefault(); send.click(); } });
     input.oninput=()=>{
       if(typingDeb) clearTimeout(typingDeb);
       typingDeb=setTimeout(()=>setTyping(cid,uid,true),400);
@@ -669,12 +742,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if(reps>=SPAM_MAXREP || (lastSendText===text && now-lastSendAt<SPAM_WIN)){ status("Duplicate spam blocked.","warn"); playSound("deny"); return; }
       if(chatLocked){ status("Chat is locked by admin.","warn"); playSound("deny"); return; }
       if(window.__st_isBanned){ status("You are banned.","bad"); playSound("deny"); return; }
+      if(window.__st_slowMode && (now-lastSendAt)<window.__st_slowModeSeconds*1000){ status(`Slow mode: wait ${window.__st_slowModeSeconds}s between messages.`,"warn"); playSound("deny"); return; }
+      const mod=window.__st_moderation||{};
+      if(mod.filterEnabled&&mod.words&&mod.words.length){
+        const lower=text.toLowerCase();
+        const bad=mod.words.find(w=>w&&lower.includes(String(w).toLowerCase()));
+        if(bad){ status("Message blocked by filter.","warn"); playSound("deny"); return; }
+      }
 
       send.disabled=true;
       try{
         await messagesCol(cid).add({userId:uid, name:uname, text, replyTo:null, timestamp: firebase.firestore.FieldValue.serverTimestamp()});
         input.value=""; setTyping(cid,uid,false); playSound("send");
         lastSendAt=now; lastSendText=text; recent.push({t:text,at:now});
+        stConfetti({count:12,duration:1200});
       }catch(e){ console.error(e); status("Failed to send.","bad"); }
       finally{ send.disabled=false; }
     };
@@ -702,6 +783,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const mid=msg.dataset.id; const muid=msg.dataset.userid;
       if(btn.dataset.action==="copy"){
         const text=msg.querySelector(".msg-text")?.textContent||""; if(text) navigator.clipboard?.writeText(text).then(()=>status("Copied.", "ok")).catch(()=>{});
+        return;
+      }
+      if(btn.dataset.action==="report"){
+        try{
+          const text=msg.querySelector(".msg-text")?.textContent||"";
+          await reportsCol(cid).add({messageId:mid,messageText:text.slice(0,200),reportedBy:uid,reportedByName:uname,timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+          status("Report submitted. Admin will review.","ok");
+        }catch(err){ console.error(err); status("Failed to report.","bad"); }
         return;
       }
       if(btn.dataset.action==="edit"){
@@ -759,6 +848,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if(document.getElementById(id)) return;
           const el=msgEl(d.id,m,uid); el.id=id; frag.appendChild(el);
         });
+        const divider=document.createElement("div");
+        divider.className="st-new-messages-divider";
+        divider.setAttribute("aria-hidden","true");
+        frag.appendChild(divider);
         oldest=snap.docs[0];
         const prev=messages.scrollHeight;
         messages.insertBefore(frag, messages.firstChild);
@@ -790,7 +883,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if(ch.type==="added"){
           const el=msgEl(d.id,m,uid); el.id=id; messages.appendChild(el);
           if(stick) messages.scrollTop=messages.scrollHeight;
-          if(m.userId && m.userId!==uid){ maybeNotify(selectedClassName||cid, m.name||"Someone", String(m.text||"")); if(document.hidden) playSound("receive"); }
+          if(m.userId && m.userId!==uid){ maybeNotify(selectedClassName||cid, m.name||"Someone", String(m.text||"")); playSound("receive"); }
         }else if(ch.type==="modified"){
           if(ex) updateMsgReactionsAndEdit(ex,m,uid);
         }else if(ch.type==="removed"){ if(ex) ex.remove(); }
@@ -805,7 +898,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let unseen=0;
       const hide=()=>{ unseen=0; if(unseenEl) unseenEl.textContent="0"; if(btn) btn.classList.add("hidden"); document.title=defaultTitle; };
       messages.addEventListener("scroll",()=>{ if(nearBottom()) hide(); }, {passive:true});
-      if(btn) btn.onclick=()=>{ messages.scrollTop=messages.scrollHeight; hide(); };
+      if(btn) btn.onclick=()=>{ messages.scrollTo({top:messages.scrollHeight,behavior:"smooth"}); hide(); };
       window.addEventListener("focus",()=>{ if(nearBottom()) hide(); });
       const mo=new MutationObserver(muts=>{
         const isNear=nearBottom();

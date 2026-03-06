@@ -46,6 +46,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function announcementsCol(classId) { return classDocRef(classId).collection("announcements"); }
   function commandsDoc(classId) { return classDocRef(classId).collection("meta").doc("commands"); }
   function pinnedDoc(classId) { return classDocRef(classId).collection("meta").doc("pinned"); }
+  function reportsCol(classId) { return classDocRef(classId).collection("reports"); }
+  function checkInDoc(classId) { return classDocRef(classId).collection("meta").doc("checkIn"); }
+  function activePollDoc(classId) { return classDocRef(classId).collection("meta").doc("activePoll"); }
+  function moderationDoc(classId) { return classDocRef(classId).collection("meta").doc("moderation"); }
+  function presenceDoc(classId) { return classDocRef(classId).collection("meta").doc("presence"); }
 
   // ===== login =====
   $("loginBtn").onclick = async () => {
@@ -103,6 +108,11 @@ document.addEventListener("DOMContentLoaded", () => {
     wireBulkPending();
     wirePending();
     wireBanned();
+    wireReports();
+    wireStats();
+    wireCheckIn();
+    wirePoll();
+    wireModeration();
     wireAnnouncements();
     wireChat();
   }
@@ -222,9 +232,14 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     $("exportChatBtn").onclick = async () => {
-      setStatus("Exporting chat…", "warn");
+      const range = parseInt($("exportRangeSelect").value || "7", 10);
+      const now = new Date();
+      let start;
+      if (range === 1) { start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); }
+      else { start = new Date(now.getTime() - range * 24 * 60 * 60 * 1000); }
+      setStatus("Exporting…", "warn");
       try {
-        const snap = await messagesCol(currentClassId).orderBy("timestamp", "asc").limit(300).get();
+        const snap = await messagesCol(currentClassId).orderBy("timestamp", "asc").startAt(firebase.firestore.Timestamp.fromDate(start)).limit(300).get();
         const lines = [];
         snap.forEach((d) => {
           const m = d.data() || {};
@@ -234,11 +249,104 @@ document.addEventListener("DOMContentLoaded", () => {
         const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "securetext-admin-export-" + currentClassId + ".txt";
+        a.download = "securetext-export-" + currentClassId + ".txt";
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 200);
         setStatus("✅ Exported " + snap.size + " messages.", "ok");
       } catch (e) { console.error(e); setStatus("Export failed.", "bad"); }
+    };
+
+    $("slowModeOnBtn").onclick = async () => {
+      try { await commandsDoc(currentClassId).set({ slowMode: true, slowModeSeconds: 10 }, { merge: true }); setStatus("✅ Slow mode ON (10s).", "ok"); } catch (e) { setStatus("Failed.", "bad"); }
+    };
+    $("slowModeOffBtn").onclick = async () => {
+      try { await commandsDoc(currentClassId).set({ slowMode: false }, { merge: true }); setStatus("✅ Slow mode OFF.", "ok"); } catch (e) { setStatus("Failed.", "bad"); }
+    };
+  }
+
+  function wireReports() {
+    const list = $("reportsList");
+    const unsub = reportsCol(currentClassId).orderBy("timestamp", "desc").limit(50).onSnapshot((snap) => {
+      list.innerHTML = "";
+      snap.forEach((doc) => {
+        const r = doc.data() || {};
+        const div = document.createElement("div");
+        div.style.cssText = "padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:flex-start;gap:10px";
+        div.innerHTML = "<div><strong>" + (r.reportedByName || "?") + "</strong> reported message: \"" + (r.messageText || "").slice(0, 80) + "…\"</div>";
+        const btn = document.createElement("button"); btn.className = "msg-btn"; btn.textContent = "Dismiss";
+        btn.onclick = () => doc.ref.delete();
+        div.appendChild(btn);
+        list.appendChild(div);
+      });
+      if (snap.empty) list.innerHTML = "<div class=\"muted\" style=\"padding:10px\">No reports.</div>";
+    });
+    liveUnsubs.push(unsub);
+  }
+
+  function wireStats() {
+    $("adminStatsRefreshBtn").onclick = async () => {
+      $("adminStatsText").textContent = "Loading…";
+      try {
+        const [pendingSnap, presenceSnap, messagesSnap] = await Promise.all([
+          pendingCol(currentClassId).where("status", "==", "pending").get(),
+          presenceDoc(currentClassId).get(),
+          (() => { const start = new Date(Date.now() - 24 * 60 * 60 * 1000); return messagesCol(currentClassId).orderBy("timestamp", "asc").startAt(firebase.firestore.Timestamp.fromDate(start)).limit(300).get(); })()
+        ]);
+        let online = 0;
+        if (presenceSnap.exists) {
+          const data = presenceSnap.data() || {};
+          const now = Date.now();
+          Object.values(data).forEach((v) => { if (v && v.toDate && (now - v.toDate().getTime() < 120000)) online++; });
+        }
+        $("adminStatsText").textContent = "Pending: " + pendingSnap.size + "  ·  Online now: " + online + "  ·  Messages (24h): " + messagesSnap.size;
+      } catch (e) { $("adminStatsText").textContent = "Failed to load."; }
+    };
+  }
+
+  function wireCheckIn() {
+    $("checkInStartBtn").onclick = async () => {
+      try { await checkInDoc(currentClassId).set({ active: true, startedAt: firebase.firestore.FieldValue.serverTimestamp(), checkIns: {} }, { merge: true }); setStatus("✅ Check-in started.", "ok"); } catch (e) { setStatus("Failed.", "bad"); }
+    };
+    $("checkInEndBtn").onclick = async () => {
+      try { await checkInDoc(currentClassId).set({ active: false }, { merge: true }); setStatus("✅ Check-in ended.", "ok"); } catch (e) { setStatus("Failed.", "bad"); }
+    };
+    const unsub = checkInDoc(currentClassId).onSnapshot((doc) => {
+      const d = doc.data() || {};
+      const checkIns = d.checkIns || {};
+      const names = Object.keys(checkIns).length + " checked in.";
+      $("checkInList").textContent = d.active ? names : (d.active ? names : "No active check-in.");
+    });
+    liveUnsubs.push(unsub);
+  }
+
+  function wirePoll() {
+    $("pollCreateBtn").onclick = async () => {
+      const q = ($("pollQuestionInput").value || "").trim();
+      const optsStr = ($("pollOptionsInput").value || "").trim();
+      const opts = optsStr.split(/[,]+/).map((s) => s.trim()).filter(Boolean);
+      if (!q || opts.length < 2) { setStatus("Enter question and at least 2 options.", "warn"); return; }
+      try {
+        await activePollDoc(currentClassId).set({ question: q, options: opts, createdAt: Date.now(), votes: {} }, { merge: true });
+        setStatus("✅ Poll created.", "ok");
+      } catch (e) { setStatus("Failed.", "bad"); }
+    };
+    $("pollEndBtn").onclick = async () => {
+      try { await activePollDoc(currentClassId).set({ question: null, options: [], votes: {} }, { merge: true }); setStatus("✅ Poll ended.", "ok"); } catch (e) { setStatus("Failed.", "bad"); }
+    };
+  }
+
+  function wireModeration() {
+    moderationDoc(currentClassId).get().then((doc) => {
+      const d = doc.data() || {};
+      $("filterEnabledCheck").checked = !!d.filterEnabled;
+      $("filterWordsInput").value = Array.isArray(d.words) ? d.words.join("\n") : "";
+    });
+    $("filterSaveBtn").onclick = async () => {
+      const words = ($("filterWordsInput").value || "").split(/[\n,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+      try {
+        await moderationDoc(currentClassId).set({ filterEnabled: $("filterEnabledCheck").checked, words }, { merge: true });
+        setStatus("✅ Filter saved.", "ok");
+      } catch (e) { setStatus("Failed.", "bad"); }
     };
   }
 

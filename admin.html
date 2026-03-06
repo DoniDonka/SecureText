@@ -51,6 +51,12 @@
           <div id="adminActionStatus" class="muted" style="margin-top:8px"></div>
 
           <div class="card" style="margin-top:12px">
+            <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">QUICK STATS</div>
+            <div id="adminStatsText" class="muted">Click Refresh to load.</div>
+            <button id="adminStatsRefreshBtn" type="button" class="pill" style="margin-top:8px">Refresh stats</button>
+          </div>
+
+          <div class="card" style="margin-top:12px">
             <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">CLASS CONTROLS</div>
             <div class="row">
               <button id="forceLogoutEveryoneBtn" class="danger" type="button">Force Logout</button>
@@ -71,7 +77,16 @@
               <button id="deleteAllChatBtn" class="danger" type="button">Delete ALL Chat</button>
               <button id="deleteAllAnnouncementsBtn" class="danger" type="button">Delete ALL Announcements</button>
               <button id="resetCommandsBtn" class="danger" type="button">Reset Commands</button>
+            </div>
+            <div class="row" style="margin-top:10px;align-items:center">
+              <label class="muted">Export:</label>
+              <select id="exportRangeSelect"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="1">Today only</option></select>
               <button id="exportChatBtn" class="primary" type="button">Export Chat</button>
+            </div>
+            <div class="row" style="margin-top:10px;align-items:center">
+              <label class="muted">Slow mode:</label>
+              <button id="slowModeOnBtn" type="button" class="primary">Slow mode ON (10s)</button>
+              <button id="slowModeOffBtn" type="button">Slow mode OFF</button>
             </div>
             <div class="row" style="margin-top:10px">
               <input id="pinMessageInput" placeholder="Pinned message (shown at top of chat)…" style="flex:1;min-width:200px" />
@@ -122,6 +137,31 @@
             </thead>
             <tbody></tbody>
           </table>
+
+          <div class="card" style="margin-top:12px">
+            <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">CHECK-IN</div>
+            <button id="checkInStartBtn" type="button" class="good">Start check-in</button>
+            <button id="checkInEndBtn" type="button" class="danger" style="margin-left:8px">End check-in</button>
+            <div id="checkInList" class="muted" style="margin-top:8px;font-size:0.9em"></div>
+          </div>
+
+          <div class="card" style="margin-top:12px">
+            <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">POLL</div>
+            <input id="pollQuestionInput" placeholder="Poll question…" style="width:100%;margin-bottom:8px" />
+            <input id="pollOptionsInput" placeholder="Options, comma-separated (e.g. Yes, No)" style="width:100%;margin-bottom:8px" />
+            <button id="pollCreateBtn" type="button" class="primary">Create poll</button>
+            <button id="pollEndBtn" type="button" class="danger" style="margin-left:8px">End poll</button>
+          </div>
+
+          <div class="card" style="margin-top:12px">
+            <div class="muted" style="font-weight:900;letter-spacing:.08em;margin-bottom:10px">BAD WORD FILTER</div>
+            <label><input type="checkbox" id="filterEnabledCheck" /> Enable filter</label>
+            <textarea id="filterWordsInput" placeholder="Words (one per line or comma-separated)" style="margin-top:8px;min-height:60px;width:100%"></textarea>
+            <button id="filterSaveBtn" type="button" class="primary" style="margin-top:8px">Save</button>
+          </div>
+
+          <h3 style="margin-top:14px">Reports</h3>
+          <div id="reportsList" class="card" style="margin-top:8px;max-height:200px;overflow:auto"></div>
 
           <h3 style="margin-top:14px">Announcements</h3>
           <textarea id="announcementInput" placeholder="Type announcement…"></textarea>

@@ -37,6 +37,10 @@ const ST_REFS = {
   commandsDoc: function (cid) { return ST_REFS.metaDoc(cid, "commands"); },
   typingDoc: function (cid) { return ST_REFS.metaDoc(cid, "typing"); },
   presenceDoc: function (cid) { return ST_REFS.metaDoc(cid, "presence"); },
-  pinnedDoc: function (cid) { return ST_REFS.metaDoc(cid, "pinned"); }
+  pinnedDoc: function (cid) { return ST_REFS.metaDoc(cid, "pinned"); },
+  reportsCol: function (cid) { return ST_REFS.classDoc(cid).collection("reports"); },
+  checkInDoc: function (cid) { return ST_REFS.metaDoc(cid, "checkIn"); },
+  activePollDoc: function (cid) { return ST_REFS.metaDoc(cid, "activePoll"); },
+  moderationDoc: function (cid) { return ST_REFS.metaDoc(cid, "moderation"); }
 };
 if (typeof window !== "undefined") window.ST_REFS = ST_REFS;
